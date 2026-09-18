@@ -1,0 +1,68 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python -m pip install -q .
+      - run: python -m compileall -q osintdd
+      - run: osintdd --help && osint-dd --version
+      - run: python -m build --wheel --sdist --outdir dist . || (python -m pip install -q build && python -m build --wheel --sdist --outdir dist .)
+      - uses: actions/upload-artifact@v4
+        with: { name: osint-dd-wheel, path: dist/* }
+
+  app:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,        label: macos-arm64 }
+          - { os: macos-15-intel,  label: macos-x86_64 }
+          - { os: windows-latest,  label: windows-x64 }
+          - { os: ubuntu-22.04,    label: linux-x86_64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Build app
+        shell: bash
+        run: ./build_app.sh
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p out
+          case "${{ matrix.os }}" in
+            macos*)   ditto -c -k --keepParent "dist/osint-dd.app" "out/osint-dd-${{ matrix.label }}.zip" ;;
+            windows*) 7z a -tzip "out/osint-dd-${{ matrix.label }}.zip" ./dist/osint-dd >/dev/null ;;
+            *)        tar -C dist -czf "out/osint-dd-${{ matrix.label }}.tar.gz" osint-dd ;;
+          esac
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with: { name: osint-dd-${{ matrix.label }}, path: out/* }
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [app]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
