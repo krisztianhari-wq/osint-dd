@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "osint-dd"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local, logged due-diligence / OSINT assistant for companies, domains and (with legal basis) people. HU/EN, PDF reports. Crafted by sadrobot."
 readme = "README.md"
 license = { text = "MIT" }
