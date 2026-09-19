@@ -156,9 +156,9 @@ WORKING = {"hu": ("Már dolgozunk rajta…", "Nyilvános forrásokat kérdezünk
 SCENE_CSS = """
 .scene{position:relative;height:150px;margin:18px auto 8px;max-width:640px;display:grid;grid-template-columns:repeat(6,1fr);align-items:center;justify-items:center}
 .scene svg.ic{width:48px;height:48px;fill:none;stroke:#C5CDD4;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:stroke .4s}
-.scene .ic{animation:glow 7.2s infinite}.scene .ic:nth-child(2){animation-delay:1.2s}.scene .ic:nth-child(3){animation-delay:2.4s}.scene .ic:nth-child(4){animation-delay:3.6s}.scene .ic:nth-child(5){animation-delay:4.8s}.scene .ic:nth-child(6){animation-delay:6s}
+.scene .ic{animation:glow 6s infinite}.scene .ic:nth-child(2){animation-delay:1s}.scene .ic:nth-child(3){animation-delay:2s}.scene .ic:nth-child(4){animation-delay:3s}.scene .ic:nth-child(5){animation-delay:4s}.scene .ic:nth-child(6){animation-delay:5s}
 @keyframes glow{0%,14%{stroke:#C5CDD4}6%{stroke:#2F6F8F}}
-.lens{position:absolute;top:22px;left:calc(8.333% - 43px);width:86px;height:86px;animation:sweep 7.2s ease-in-out infinite;filter:drop-shadow(0 6px 10px rgba(47,111,143,.18))}
+.lens{position:absolute;top:22px;left:calc(8.333% - 43px);width:86px;height:86px;animation:sweep 6s ease-in-out infinite;filter:drop-shadow(0 6px 10px rgba(47,111,143,.18))}
 @keyframes sweep{0%,100%{left:calc(8.333% - 43px);transform:rotate(0)}16%{left:calc(25% - 43px);transform:rotate(-4deg)}33%{left:calc(41.667% - 43px);transform:rotate(3deg)}50%{left:calc(58.333% - 43px);transform:rotate(-3deg)}66%{left:calc(75% - 43px);transform:rotate(4deg)}83%{left:calc(91.667% - 43px);transform:rotate(-2deg)}}
 .lens circle.g{fill:rgba(255,255,255,.55);stroke:#2F6F8F;stroke-width:3}.lens path{stroke:#2F6F8F;stroke-width:5;stroke-linecap:round}.lens .sh{fill:none;stroke:#fff;stroke-width:2.5;opacity:.8}
 .working{text-align:center}.working h3{font-weight:500;font-size:20px;margin:6px 0 4px;letter-spacing:-.01em}.working p{color:var(--muted);margin:0 0 14px;font-size:13.5px}
@@ -173,7 +173,12 @@ def run_page(lang: str, cid: str) -> str:
     c = STORE.get_case(cid)
     lines = "\n".join(PROGRESS.get(cid, []))
     done = cid not in RUNNING
-    refresh = "" if done else "<meta http-equiv='refresh' content='3'>"
+    refresh = "" if done else f"""<script>
+(function poll(){{fetch('/api/status/{cid}').then(r=>r.json()).then(d=>{{
+  var pre=document.getElementById('plog'); if(pre) pre.textContent=d.log.join('\\n')||'…';
+  if(!d.running){{location.replace(d.report?'/report/{cid}?lang={lang}':'/progress/{cid}?lang={lang}');return;}}
+  setTimeout(poll,3000);}}).catch(()=>setTimeout(poll,4000));}})();
+</script>"""
     icons = "".join(f"<svg class='ic' viewBox='0 0 48 48'>{ic}</svg>" for ic in SCENE_ICONS)
     lens = ("<svg class='lens' viewBox='0 0 100 100'><circle class='g' cx='40' cy='40' r='27'/><path class='sh' d='M26 32c3-6 8-10 15-11'/>"
             "<path d='M60 60l26 26'/></svg>")
@@ -184,7 +189,7 @@ def run_page(lang: str, cid: str) -> str:
     else:
         scene = f"<div class='working'><div class='scene'>{icons}{lens}</div><h3>{title}</h3><p>{sub}</p><div class='dots'><span></span><span></span><span></span></div></div>"
     body = f"""{refresh}<style>{SCENE_CSS}</style><p><a href="/?lang={lang}">{u['back']}</a></p><h2>{html.escape(c['title'])}</h2><div class="card">{scene}
-<details style="margin-top:18px"><summary class="muted" style="cursor:pointer;font-size:12.5px">{'technikai napló' if lang == 'hu' else 'technical log'}</summary><pre>{html.escape(lines) or '…'}</pre></details></div>"""
+<details style="margin-top:18px"><summary class="muted" style="cursor:pointer;font-size:12.5px">{'technikai napló' if lang == 'hu' else 'technical log'}</summary><pre id="plog">{html.escape(lines) or '…'}</pre></details></div>"""
     return page(lang, body)
 
 
@@ -318,6 +323,10 @@ class H(BaseHTTPRequestHandler):
                     ct = {"pdf": "application/pdf", "html": "text/html; charset=utf-8", "md": "text/plain; charset=utf-8"}.get(fp.suffix[1:], "application/octet-stream")
                     return self._send(fp.read_bytes(), ct)
                 return self._send("not found", "text/plain", 404)
+            if p.startswith("/api/status/"):
+                cid = p[12:]
+                c = STORE.get_case(cid) or {}
+                return self._send(json.dumps({"running": cid in RUNNING, "report": bool(c.get("report_path")), "log": PROGRESS.get(cid, [])[-40:]}, ensure_ascii=False), "application/json")
             if p == "/api/cases":
                 return self._send(json.dumps(STORE.list_cases(), ensure_ascii=False, default=str), "application/json")
             return self._send("not found", "text/plain", 404)
