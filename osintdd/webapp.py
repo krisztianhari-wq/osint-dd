@@ -77,29 +77,39 @@ def page(lang: str, body: str, title: str = "") -> str:
 <footer>{html.escape(t(lang,'app'))} · {html.escape(t(lang,'by'))} · {html.escape(u['notes'])}<br><span style="opacity:.7">data: {html.escape(str(_DATA_DIR))}</span></footer></div></body></html>"""
 
 
-def index(lang: str, error: str = "") -> str:
+def index(lang: str, error: str = "", vals: dict | None = None) -> str:
     u = UI[lang]
     e = html.escape
-    opts = "".join(f"<option value='{k}' {'selected' if k=='nem_szemelyes' else ''}>{e(LEGAL_LABEL[lang][k])}</option>" for k in LEGAL_BASES)
+    v = vals or {}
+
+    def val(k: str) -> str:
+        return f" value='{e(v.get(k, ''))}'" if v.get(k) else ""
+
+    def chk(k: str, default: bool = False) -> str:
+        on = (v.get(k) == "on") if v else default
+        return " checked" if on else ""
+    sel_lb = v.get("legal_basis") or "nem_szemelyes"
+    sel_lang = v.get("lang") or lang
+    opts = "".join(f"<option value='{k}' {'selected' if k==sel_lb else ''}>{e(LEGAL_LABEL[lang][k])}</option>" for k in LEGAL_BASES)
     form = f"""<h2>{u['new']}</h2><div class="card"><form method="post" action="/new">{f"<div class='err'>{e(error)}</div>" if error else ''}
 <input type="hidden" name="ui_lang" value="{lang}">
-<div class="row"><div><label>{u['title']}</label><input type="text" name="title" required placeholder="pl. Beszállító X átvilágítás"></div>
-<div><label>{u['purpose']}</label><input type="text" name="purpose" required placeholder="NIS2 beszállítói kockázatértékelés"></div>
+<div class="row"><div><label>{u['title']}</label><input type="text" name="title" required placeholder="pl. Beszállító X átvilágítás"{val("title")}></div>
+<div><label>{u['purpose']}</label><input type="text" name="purpose" required placeholder="NIS2 beszállítói kockázatértékelés"{val("purpose")}></div>
 <div><label>{u['legal']}</label><select name="legal_basis">{opts}</select><p class="hint">{u['hint_legal']}</p></div>
-<div><label>{u['lang']}</label><select name="lang"><option value="hu" {'selected' if lang=='hu' else ''}>Magyar</option><option value="en" {'selected' if lang=='en' else ''}>English</option></select></div></div>
-<div class="row"><div><label>{u['company']}</label><input type="text" name="company"></div><div><label>{u['tax']}</label><input type="text" name="tax_id"></div>
-<div><label>{u['country']}</label><input type="text" name="country" value="HU"></div><div><label>{u['domain']}</label><input type="text" name="domain" placeholder="example.hu"></div>
-<div><label>{u['keywords']}</label><input type="text" name="keywords"></div><div><label>{u['requester']}</label><input type="text" name="requester"></div></div>
-<div class="person" id="pb"><label class="chk"><input type="checkbox" name="person_checks" id="pc" onchange="document.getElementById('pb').classList.toggle('on',this.checked)"> {u['person_on']} <span class="muted">— {u['person_block']}</span></label>
-<div class="row"><div><label>{u['person']}</label><input type="text" name="person"></div><div><label>{u['email']}</label><input type="text" name="email"></div>
-<div><label>{u['username']}</label><input type="text" name="username"></div><div><label>{u['phone']}</label><input type="text" name="phone" placeholder="+36 …"></div></div></div>
+<div><label>{u['lang']}</label><select name="lang"><option value="hu" {'selected' if sel_lang=='hu' else ''}>Magyar</option><option value="en" {'selected' if sel_lang=='en' else ''}>English</option></select></div></div>
+<div class="row"><div><label>{u['company']}</label><input type="text" name="company"{val("company")}></div><div><label>{u['tax']}</label><input type="text" name="tax_id"{val("tax_id")}></div>
+<div><label>{u['country']}</label><input type="text" name="country" value="{e(v.get('country') or 'HU')}"></div><div><label>{u['domain']}</label><input type="text" name="domain" placeholder="example.hu"{val("domain")}></div>
+<div><label>{u['keywords']}</label><input type="text" name="keywords"{val("keywords")}></div><div><label>{u['requester']}</label><input type="text" name="requester"{val("requester")}></div></div>
+<div class="person{' on' if v.get('person_checks')=='on' else ''}" id="pb"><label class="chk"><input type="checkbox" name="person_checks" id="pc"{chk('person_checks')} onchange="document.getElementById('pb').classList.toggle('on',this.checked)"> {u['person_on']} <span class="muted">— {u['person_block']}</span></label>
+<div class="row"><div><label>{u['person']}</label><input type="text" name="person"{val("person")}></div><div><label>{u['email']}</label><input type="text" name="email"{val("email")}></div>
+<div><label>{u['username']}</label><input type="text" name="username"{val("username")}></div><div><label>{u['phone']}</label><input type="text" name="phone" placeholder="+36 …"{val("phone")}></div></div></div>
 <div class="person" style="border-top:1px dashed var(--line);margin-top:8px;padding-top:16px"><label>{t(lang,'refine_block')}</label>
-<div class="row"><div><label>{t(lang,'reg_number')}</label><input type="text" name="reg_number" placeholder="01-10-041234"></div><div><label>{t(lang,'location')}</label><input type="text" name="location"></div>
-<div><label>{t(lang,'birth_year')}</label><input type="text" name="birth_year" placeholder="1985"></div><div><label>{t(lang,'employer')}</label><input type="text" name="employer"></div></div></div>
+<div class="row"><div><label>{t(lang,'reg_number')}</label><input type="text" name="reg_number" placeholder="01-10-041234"{val("reg_number")}></div><div><label>{t(lang,'location')}</label><input type="text" name="location"{val("location")}></div>
+<div><label>{t(lang,'birth_year')}</label><input type="text" name="birth_year" placeholder="1985"{val("birth_year")}></div><div><label>{t(lang,'employer')}</label><input type="text" name="employer"{val("employer")}></div></div></div>
 <div class="person" style="border-top:1px dashed var(--line);margin-top:8px;padding-top:16px"><label>{t(lang,'modules_title')}</label>
-<div class="mods">{''.join(f"<label><input type='checkbox' name='mod_{m}' {'checked' if m in DEFAULT_MODULES else ''}> {e(t(lang,'modules')[m])}</label>" for m, g in MODULES_META if g != 'grey')}</div>
+<div class="mods">{''.join(f"<label><input type='checkbox' name='mod_{m}'{chk('mod_'+m, m in DEFAULT_MODULES)}> {e(t(lang,'modules')[m])}</label>" for m, g in MODULES_META if g != 'grey')}</div>
 <div class="grey"><div class="gt">{u['grey_title']}</div><p class="gh">{u['grey_hint']}</p>
-<div class="mods">{''.join(f"<label><input type='checkbox' name='mod_{m}'> {e(t(lang,'modules')[m])}</label>" for m, g in MODULES_META if g == 'grey')}</div></div></div>
+<div class="mods">{''.join(f"<label><input type='checkbox' name='mod_{m}'{chk('mod_'+m)}> {e(t(lang,'modules')[m])}</label>" for m, g in MODULES_META if g == 'grey')}</div></div></div>
 <p style="margin-top:18px"><button class="btn" name="action" value="run">{u['create']}</button> &nbsp; <button class="btn ghost" name="action" value="create">{u['create_only']}</button></p></form></div>"""
     rows = []
     allc = STORE.list_cases()
@@ -144,17 +154,17 @@ SCENE_ICONS = [
 WORKING = {"hu": ("Már dolgozunk rajta…", "Nyilvános forrásokat kérdezünk le, majd Claude rendszerezi és összefoglalja. Ez 1–3 perc."),
            "en": ("We're working on it…", "Querying public sources, then Claude organises and summarises them. This takes 1–3 minutes.")}
 SCENE_CSS = """
-.scene{position:relative;height:150px;margin:18px auto 8px;max-width:640px;display:flex;justify-content:space-between;align-items:center;padding:0 26px}
+.scene{position:relative;height:150px;margin:18px auto 8px;max-width:640px;display:grid;grid-template-columns:repeat(6,1fr);align-items:center;justify-items:center}
 .scene svg.ic{width:48px;height:48px;fill:none;stroke:#C5CDD4;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:stroke .4s}
 .scene .ic{animation:glow 7.2s infinite}.scene .ic:nth-child(2){animation-delay:1.2s}.scene .ic:nth-child(3){animation-delay:2.4s}.scene .ic:nth-child(4){animation-delay:3.6s}.scene .ic:nth-child(5){animation-delay:4.8s}.scene .ic:nth-child(6){animation-delay:6s}
 @keyframes glow{0%,14%{stroke:#C5CDD4}6%{stroke:#2F6F8F}}
-.lens{position:absolute;top:22px;left:0;width:86px;height:86px;animation:sweep 7.2s ease-in-out infinite;filter:drop-shadow(0 6px 10px rgba(47,111,143,.18))}
-@keyframes sweep{0%{transform:translateX(0)}16%{transform:translateX(100px) rotate(-4deg)}33%{transform:translateX(205px) rotate(3deg)}50%{transform:translateX(310px) rotate(-3deg)}66%{transform:translateX(415px) rotate(4deg)}83%{transform:translateX(520px) rotate(-2deg)}100%{transform:translateX(0)}}
+.lens{position:absolute;top:22px;left:calc(8.333% - 43px);width:86px;height:86px;animation:sweep 7.2s ease-in-out infinite;filter:drop-shadow(0 6px 10px rgba(47,111,143,.18))}
+@keyframes sweep{0%,100%{left:calc(8.333% - 43px);transform:rotate(0)}16%{left:calc(25% - 43px);transform:rotate(-4deg)}33%{left:calc(41.667% - 43px);transform:rotate(3deg)}50%{left:calc(58.333% - 43px);transform:rotate(-3deg)}66%{left:calc(75% - 43px);transform:rotate(4deg)}83%{left:calc(91.667% - 43px);transform:rotate(-2deg)}}
 .lens circle.g{fill:rgba(255,255,255,.55);stroke:#2F6F8F;stroke-width:3}.lens path{stroke:#2F6F8F;stroke-width:5;stroke-linecap:round}.lens .sh{fill:none;stroke:#fff;stroke-width:2.5;opacity:.8}
 .working{text-align:center}.working h3{font-weight:500;font-size:20px;margin:6px 0 4px;letter-spacing:-.01em}.working p{color:var(--muted);margin:0 0 14px;font-size:13.5px}
 .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin:0 3px;animation:b 1.4s infinite}.dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
 @keyframes b{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-4px)}}
-@media (max-width:700px){.scene{max-width:100%;padding:0 10px}.lens{animation-name:sweepS}@keyframes sweepS{0%{transform:translateX(0)}50%{transform:translateX(200px)}100%{transform:translateX(0)}}}
+@media (max-width:700px){.scene{max-width:100%}.scene svg.ic{width:36px;height:36px}.lens{width:64px;height:64px;top:32px}}
 """
 
 
@@ -336,7 +346,7 @@ class H(BaseHTTPRequestHandler):
                 cid = STORE.create_case(form["title"].strip(), form["purpose"].strip(), form.get("legal_basis", "nem_szemelyes"), tg, pc,
                                         form.get("requester", "").strip(), form.get("lang", lang), mods)
             except Exception as e:  # noqa: BLE001
-                return self._redir(f"/?lang={lang}&err={urllib.parse.quote(str(e))}")
+                return self._send(index(lang, str(e), form))
             if form.get("action") == "run":
                 _start(cid)
                 return self._redir(f"/progress/{cid}?lang={lang}")
