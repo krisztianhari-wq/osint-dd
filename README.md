@@ -1,4 +1,6 @@
-# osint-dd · Due Diligence — *crafted by sadrobot*
+# osint-dd · Due Diligence
+
+Local due-diligence / OSINT assistant by <img src="assets/sadrobot.png" width="22" alt=""> **sadrobot**.
 
 A **local, fully logged due-diligence / OSINT assistant** for vetting companies, vendors, domains and — only with a recorded GDPR legal basis — people. It runs on your own machine, uses **free public sources** by default, **logs every query and result** (SQLite + raw JSON), and turns each case into a **printable PDF report** in Hungarian or English. Grey-zone sources are available as explicit per-case opt-ins. An AI executive summary is written by Claude when an API key, the Claude Code CLI or a local Ollama model is available; otherwise a rule-based summary is produced.
 
@@ -43,6 +45,9 @@ Legal-basis keys: `nem_szemelyes` (no personal data), `jogos_erdek` (legitimate 
 | **Sanctions** | EU consolidated (FSF), US OFAC SDN, UN Security Council, UK OFSI — official files, 24 h cache | fuzzy name matching (rapidfuzz ≥ 88 %) |
 | **Web & press** | DuckDuckGo (general, negative keywords HU/EN, news), GDELT DOC API | hits, adverse media, 3-year news monitor |
 | **Domain** | DNS (A/MX/NS/TXT), SPF/DMARC, crt.sh, RDAP / whois, Wayback CDX, Shodan InternetDB | subdomains, e-mail protection, age, open ports, known CVEs |
+| **GitHub** | GitHub REST API (optional `OSINTDD_GITHUB_TOKEN`) | organisation profile and repos for a company; profile, repos and commit e-mails for a username; commit search for an e-mail; code mentions of a domain (token) |
+| **News geography** | GDELT GEO 2.0 | where the subject is written about, last 12 months, top locations |
+| **Dork links** | generated locally, no network | 12+ targeted Google queries (documents, incidents, court, LinkedIn, exposed admin panels, e-mails on the domain…) in the manual-links section |
 | **Person** *(legal basis required)* | username check on 20 platforms, Gravatar, **maigret** (top 500 sites), **holehe** (120 services, second pass for rate-limited ones) | accounts, e-mail registrations; the report states how many services could not be checked |
 | **Phone** *(legal basis required)* | phonenumbers (offline) | validity, type, region, original carrier |
 | **Manual links** | e-cégjegyzék, NAV debtor lists, court decisions, EKR/TED, Cégközlöny, OpenCorporates, OpenSanctions, OCCRP Aleph, LinkedIn… | pre-filled searches where no free API exists |
@@ -66,12 +71,29 @@ The report footer shows which backend wrote the summary. Summaries are stored pe
 - **Ambiguity detection** after a run: if a company has no tax ID / registration number and registry sites return several different companies, or a person has no disambiguators and many conflicting hits, a yellow **“Refinement needed”** card at the top of the report asks for the filter data → *Refine and re-run*.
 - **If refinement is impossible**: *“Separate report per candidate”* (CLI: `split <id>`). Companies are split by the tax IDs / registration numbers found; people are grouped into distinct identities by Claude. Each candidate becomes a **sub-case** (max 6) with its own run and PDF, listed on the parent case.
 
+## Entity graph
+
+Every run builds an **append-only entity graph** from the findings: Company, LegalEntity, Person, Domain, UserAccount, Sanction, DataBreach, Phone… Each property is a *statement* that records its source module, URL, run and finding (statement-level provenance). Fuzzy matches (sanctions list entries, GLEIF records, GitHub orgs, social profiles, Aleph hits) become **same-as candidates** with a score in a **review queue**; accepting adds a link, rejecting keeps the trace, nothing is ever deleted. The graph page also shows when an entity already appeared in another case. Export as FollowTheMoney-style JSON Lines (`.ftm`) or a statements CSV — from the GUI, `osintdd graph <id> --export ftm`, or the MCP tool.
+
+## MCP server — drive it from Claude Code / Claude Desktop
+
+`osintdd mcp` starts a stdio MCP server with 12 tools (`osintdd_create_case`, `osintdd_run_case`, `osintdd_get_findings`, `osintdd_get_summary`, `osintdd_query_log`, `osintdd_refine_case`, `osintdd_split_case`, `osintdd_graph`, `osintdd_review_same_as`, `osintdd_export_graph`, `osintdd_list_cases`, `osintdd_modules`). The same GDPR gating applies: person data needs `person_checks=true` and a real legal basis; grey-zone modules run only when named explicitly.
+
+```
+claude mcp add osintdd -- /path/to/.venv/bin/osintdd mcp        # Claude Code
+```
+```json
+{ "mcpServers": { "osintdd": { "command": "/path/to/.venv/bin/osintdd", "args": ["mcp"] } } }   // Claude Desktop
+```
+Then: *“Run a due-diligence check on X Kft., tax id 12345678, domain x.hu, purpose NIS2 supplier risk”* → Claude creates and runs the case and answers from the summary; the report lands in the data directory.
+
 ## Grey-zone sources — per-case opt-in
 
 Shown in a separate amber block when creating a case; off by default, run only with the person module and a legal basis; the selection is written to the audit log.
 
 | Module | Source | Integration |
 |---|---|---|
+| `paste` | 12 paste sites (pastebin, paste.ee, justpaste.it, rentry, controlc…) **via search engines** – psbdmp.ws, which OpenOSINT used, shut down in 2026 | automatic, no key; may run for companies too |
 | `breach` | **LeakCheck public** (no key; source names + dates only) · **HIBP**, **DeHashed**, **IntelX** with keys | automatic; password fields are never stored |
 | `aleph` | **OCCRP Aleph** investigative archive | automatic with a free API key, otherwise a manual link |
 | `social` | LinkedIn / Facebook / Instagram / X / TikTok profiles **via search engines** (no scraping, no ToS breach) | automatic |
@@ -108,9 +130,11 @@ Copy `.env.example` to `.env` in the data directory (or repo root when developin
 ```
 osintdd/core.py        cases, findings, query log, audit log (SQLite, WAL)
 osintdd/http.py        logging HTTP client (every GET → query_log + raw JSON under cache/raw)
-osintdd/sources/*.py   company · sanctions · web · domain · person · phone · grey · manual
+osintdd/sources/*.py   company · sanctions · web · domain · github · geo · person · phone · grey · paste · manual (+dorks)
 osintdd/runner.py      module orchestration, ambiguity detection
 osintdd/splitter.py    per-candidate sub-cases
+osintdd/graph.py       entity graph: statements with provenance, same-as review queue, .ftm / CSV export
+osintdd/mcp_server.py  MCP server (stdio) for Claude Code / Claude Desktop
 osintdd/llm.py         Claude (API / Claude Code CLI) or Ollama or rule-based summary
 osintdd/report.py      Markdown + HTML + PDF (reportlab, Unicode fonts)
 osintdd/webapp.py      local GUI (127.0.0.1, stdlib), HU/EN
@@ -118,4 +142,12 @@ osintdd/app.py         standalone entry point (GUI + browser), used by PyInstall
 osintdd/cli.py         command line
 ```
 
-A run takes 1–3 minutes because of per-source courtesy delays (DDG 1 s, GDELT 5 s). Licence: MIT.
+A run takes 1–3 minutes because of per-source courtesy delays (DDG 1 s, GDELT 5 s).
+
+## Licence
+
+<img src="assets/sadrobot.png" width="40" alt="sadrobot">
+
+© 2026 sadrobot. All rights reserved – see [LICENSE](LICENSE) (English and Hungarian).
+The published app (installers, Python package) may be used free of charge for your own non-commercial use; your cases, collected data and reports are yours – and so is the legal responsibility for collecting them.
+Copying, modifying, redistributing or reusing the code, the design or the logos requires prior written permission from sadrobot.

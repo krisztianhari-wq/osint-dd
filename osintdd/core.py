@@ -44,9 +44,9 @@ LEGAL_BASES = {
 
 # Modulok: (kulcs, csoport). Csoport: core | person | grey
 MODULES_META = [
-    ("company", "core"), ("sanctions", "core"), ("domain", "core"), ("web", "core"), ("manual", "core"),
+    ("company", "core"), ("sanctions", "core"), ("domain", "core"), ("web", "core"), ("github", "core"), ("geo", "core"), ("dorks", "core"), ("manual", "core"),
     ("person", "person"), ("phone", "person"),
-    ("breach", "grey"), ("aleph", "grey"), ("social", "grey"), ("face", "grey"),
+    ("breach", "grey"), ("paste", "grey"), ("aleph", "grey"), ("social", "grey"), ("face", "grey"),
 ]
 DEFAULT_MODULES = [m for m, g in MODULES_META if g != "grey"]
 

@@ -1,4 +1,6 @@
-# osint-dd · Átvilágító — *crafted by sadrobot*
+# osint-dd · Átvilágító
+
+Due diligence / OSINT asszisztens, készítette: <img src="assets/sadrobot.png" width="22" alt=""> **sadrobot**.
 
 Helyi, a saját gépeden futó **due diligence / OSINT asszisztens** cégek, szolgáltatók, domainek és – rögzített GDPR-jogalappal – személyek ellenőrzésére. Csak **ingyenes, nyilvános forrásokat** használ, **minden lekérést és eredményt naplóz** (SQLite + nyers JSON), és minden ügyből **nyomtatható PDF** jelentést készít magyar vagy angol nyelven.
 
@@ -51,6 +53,9 @@ A jelentés lábléce mutatja, melyik háttér írta az összefoglalót. Az öss
 | **Szankciós listák** | EU konszolidált (FSF), US OFAC SDN, ENSZ BT, UK OFSI – hivatalos fájlok, 24 h cache | fuzzy névillesztés (rapidfuzz ≥ 88 %) |
 | **Web és sajtó** | DuckDuckGo (általános, negatív kulcsszavak HU/EN, hírek), GDELT DOC API | találatok, negatív hírek, 3 éves hírmonitor |
 | **Domain** | DNS (A/MX/NS/TXT), SPF/DMARC, crt.sh, RDAP / whois, Wayback CDX, Shodan InternetDB | aldomainek, e-mail védelem, kor, nyitott portok, ismert CVE-k |
+| **GitHub** | GitHub REST API (opcionális `OSINTDD_GITHUB_TOKEN`) | cég: szervezet és repók; felhasználónév: profil, repók, commit-e-mailek; e-mail: commit-keresés; domain: kód-említések (tokennel) |
+| **Hírek földrajza** | GDELT GEO 2.0 | hol írnak a célról, elmúlt 12 hónap |
+| **Dork-linkek** | helyben generált, hálózat nélkül | 12+ célzott Google-lekérdezés a kézi linkek között |
 | **Személy** *(csak jogalappal)* | 20 platform felhasználónév-ellenőrzés, Gravatar, **maigret** (top 500 oldal), **holehe** (120 szolgáltatás, rate-limitelt oldalakra 25 s után második kör) | fiókok, e-mail regisztrációk; a jelentés kimondja, hány szolgáltatás nem volt ellenőrizhető |
 | **Telefon** *(csak jogalappal)* | phonenumbers (offline) | érvényesség, típus, régió, eredeti szolgáltató |
 | **Kézi linkek** | e-cégjegyzék, NAV adóslisták, bírósági határozatok, EKR/TED, Cégközlöny, OpenCorporates, OpenSanctions, OCCRP Aleph, LinkedIn… | előre kitöltött keresések ott, ahol nincs ingyenes API |
@@ -60,6 +65,18 @@ A jelentés lábléce mutatja, melyik háttér írta az összefoglalót. Az öss
 - **Pontosító mezők** az ügynél: cégjegyzékszám, székhely/lakhely város, születési év, munkahely/pozíció. Bekerülnek a lekérdezésekbe, és a webes találatoknál `✓` jelzi, ha a találat tartalmazza őket.
 - **Kétértelműség-felismerés** futás után: ha a cégnek nincs adószáma/cégjegyzékszáma és a cégadat-oldalak több különböző céget hoznak, vagy a személyhez nincs pontosító adat és sok/ellentmondó találat van, a jelentés tetején sárga **„Pontosítás szükséges"** kártya kérdez rá a szűrő adatokra → *Pontosítás és újrafuttatás*.
 - **Ha nem lehet pontosítani**: *„Külön jelentés minden jelöltre"* gomb (CLI: `split <id>`). Cégnél a talált adószámok/cégjegyzékszámok, személynél Claude által csoportosított identitások szerint **al-ügyek** jönnek létre (max. 6), mindegyik saját futással és saját PDF-fel; a szülő ügy oldalán listázva.
+
+## Entitásgráf
+
+Minden futás **csak hozzáfűzéssel bővülő entitásgráfot** épít a megállapításokból (Company, LegalEntity, Person, Domain, UserAccount, Sanction, DataBreach, Phone…). Minden tulajdonság egy *állítás*, amely rögzíti a forrásmodult, az URL-t, a futást és a megállapítást. A fuzzy egyezések (szankciós lista, GLEIF, GitHub-szervezet, közösségi profil, Aleph) pontszámmal **egyezés-jelöltként** a felülvizsgálati sorba kerülnek; elfogadva kapcsolat lesz, elutasítva megmarad a nyoma, semmi nem törlődik. A gráfoldal jelzi, ha egy entitás más ügyben is előfordult. Export FollowTheMoney-szerű JSON Lines (`.ftm`) vagy állítás-CSV formában (GUI, `osintdd graph <id> --export ftm`, vagy MCP-eszköz).
+
+## MCP-szerver – Claude Code / Claude Desktop vezérli
+
+`osintdd mcp` stdio MCP-szervert indít 12 eszközzel (ügy létrehozása és futtatása, megállapítások, összefoglaló, napló, pontosítás, szétválasztás, gráf, egyezés-döntés, export). A GDPR-kapuzás ugyanaz: személyes adathoz `person_checks=true` és valódi jogalap kell; a szürke zónás modulok csak név szerint megadva futnak.
+
+```
+claude mcp add osintdd -- /path/to/.venv/bin/osintdd mcp
+```
 
 ## Fizetős források – jelezve, NINCS beépítve
 
@@ -79,6 +96,7 @@ Az ügy létrehozásakor külön, sárga keretes blokkban pipálhatók; alapból
 
 | Modul | Forrás | Beépítés |
 |---|---|---|
+| `paste` | 12 paste-oldal (pastebin, paste.ee, justpaste.it, rentry, controlc…) **keresőmotoron át** – az OpenOSINT által használt psbdmp.ws 2026-ban megszűnt | automatikus, kulcs nélkül |
 | `breach` | **LeakCheck public** (kulcs nélkül, csak forrásnév + dátum) · **HIBP**, **DeHashed**, **IntelX** kulccsal | automatikus; jelszómezőt nem tárol |
 | `aleph` | **OCCRP Aleph** oknyomozó adattár | ingyenes API-kulccsal automatikus, különben kézi link |
 | `social` | LinkedIn / Facebook / Instagram / X / TikTok profilok **keresőmotoron át** (nem scraping, nem ToS-sértő) | automatikus |
@@ -118,3 +136,11 @@ osintdd/cli.py         parancssor
 ```
 
 Adatkönyvtár: `data/` (átállítható `OSINTDD_HOME`-mal). Egy futás ~1–2 perc a forrás-udvariassági várakozások miatt (DDG 1 s, GDELT 5 s).
+
+## Licenc
+
+<img src="assets/sadrobot.png" width="40" alt="sadrobot">
+
+© 2026 sadrobot. Minden jog fenntartva – lásd [LICENSE](LICENSE) (angol és magyar).
+A kiadott app (telepítők, Python-csomag) ingyenesen használható saját, nem kereskedelmi célra; az ügyeid, az összegyűjtött adatok és a riportok a tieid – ahogy az összegyűjtésük jogi felelőssége is.
+A kód, a design vagy a logók másolásához, módosításához, terjesztéséhez vagy újrafelhasználásához a sadrobot előzetes írásos engedélye kell.

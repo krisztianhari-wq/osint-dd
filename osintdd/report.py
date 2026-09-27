@@ -14,7 +14,7 @@ from .core import REPORT_DIR, Store
 from .i18n import LEGAL_LABEL, t
 from .llm import summarize
 
-CAT_ORDER = ["identity", "sanctions", "company", "domain", "web", "person", "breach", "aleph", "social", "phone", "manual"]
+CAT_ORDER = ["identity", "sanctions", "company", "domain", "web", "geo", "person", "breach", "paste", "aleph", "social", "phone", "manual"]
 SEV_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 _WIN = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 _HOME_FONTS = os.path.expanduser("~/Library/Fonts")
@@ -125,7 +125,14 @@ def render_html(case, lang, findings, qlog, summary_md, backend, run_id, generat
     if not embed:
         H.append(f"<!doctype html><html lang='{lang}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
                  f"<title>{e(t(lang,'report_title'))} – {e(case['title'])}</title><style>{CSS}</style></head><body><div class='page'>")
-    H.append(f"<header><div><div class='kicker'>{e(t(lang,'app'))}</div><h1>{e(t(lang,'report_title'))}</h1><div class='brand'>{e(t(lang,'by'))}</div></div>"
+    logo_b64 = ""
+    try:
+        import base64
+        logo_b64 = base64.b64encode((Path(__file__).parent / "static" / "sadrobot.png").read_bytes()).decode()
+    except Exception:  # noqa: BLE001
+        pass
+    logo_img = f"<img src='data:image/png;base64,{logo_b64}' alt='sadrobot' width='44' height='44' style='border-radius:10px;margin-right:14px;vertical-align:bottom'>" if logo_b64 else ""
+    H.append(f"<header><div style='display:flex;align-items:flex-end'>{logo_img}<div><div class='kicker'>{e(t(lang,'app'))}</div><h1>{e(t(lang,'report_title'))}</h1><div class='brand'>{e(t(lang,'by'))}</div></div></div>"
              f"<div class='meta'>{e(case['title'])}<br>{e(t(lang,'generated'))}: {generated}<br>{e(t(lang,'run_id'))}: {run_id}</div></header>")
     H.append("<div class='grid'>" + "".join(f"<div><b>{e(k)}</b>{e(v)}</div>" for k, v in _target_rows(case, lang)) +
              f"<div><b>{e(t(lang,'purpose'))}</b>{e(case['purpose'])}</div><div><b>{e(t(lang,'legal_basis'))}</b>{e(LEGAL_LABEL[lang].get(case['legal_basis'], case['legal_basis']))}</div>"
@@ -148,7 +155,7 @@ def render_html(case, lang, findings, qlog, summary_md, backend, run_id, generat
     H += [f"<tr><td>{q['ts'][11:19]}</td><td>{e(q['source'])}</td><td>{e(q['action'])}</td><td>{e((q['request'] or '')[:120])}</td><td>{e(q['status'] or '')}</td><td>{q['duration_ms']}</td><td>{'' if q['result_count'] is None else q['result_count']}</td></tr>" for q in qlog]
     H.append("</table></details>")
     H.append(f"<h2>{e(t(lang,'disclaimer'))}</h2><p class='note'>{e(t(lang,'disclaimer_text'))}</p>")
-    H.append(f"<footer><span>{e(t(lang,'app'))} · {e(t(lang,'by'))}</span><span>summary: {backend}</span></footer>")
+    H.append(f"<footer><span>{e(t(lang,'app'))} · {e(t(lang,'by'))} · © 2026 sadrobot</span><span>summary: {backend}</span></footer>")
     if not embed:
         H.append("</div></body></html>")
     return "".join(H)
@@ -250,8 +257,15 @@ def _pdf(path: Path, case, lang, findings, qlog, summary_md, backend, run_id, ge
     doc = SimpleDocTemplate(str(path), pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=16 * mm, bottomMargin=18 * mm,
                             title=f"{t(lang,'report_title')} – {case['title']}", author="sadrobot · osint-dd", subject=case["purpose"])
     story = []
-    head = Table([[[P(t(lang, "app"), "kicker"), P(t(lang, "report_title"), "h1"), P(t(lang, "by"), "brand")],
-                   [P(f"{case['title']}\n{t(lang,'generated')}: {generated}\n{t(lang,'run_id')}: {run_id}", "meta")]]], colWidths=[W * 0.62, W * 0.38])
+    from reportlab.platypus import Image as RLImage
+    logo_path = Path(__file__).parent / "static" / "sadrobot.png"
+    left = [P(t(lang, "app"), "kicker"), P(t(lang, "report_title"), "h1"), P(t(lang, "by"), "brand")]
+    cols = [W * 0.62, W * 0.38]
+    cells = [left, [P(f"{case['title']}\n{t(lang,'generated')}: {generated}\n{t(lang,'run_id')}: {run_id}", "meta")]]
+    if logo_path.exists():
+        cells = [[RLImage(str(logo_path), width=13 * mm, height=13 * mm)], *cells]
+        cols = [16 * mm, W * 0.62 - 16 * mm, W * 0.38]
+    head = Table([cells], colWidths=cols)
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
     story += [head, Spacer(1, 4), HRFlowable(width="100%", thickness=0.6, color=line), Spacer(1, 8)]
 

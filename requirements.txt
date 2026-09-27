@@ -6,6 +6,7 @@ rapidfuzz>=3.9
 phonenumbers>=8.13
 reportlab>=4.2
 markdown>=3.6
+mcp>=2.0
 # opcionális, ingyenes külső eszközök (személyi modul): 
 # maigret
 # holehe

@@ -49,6 +49,14 @@ def main(argv=None) -> int:
     sub.add_parser("audit", help="rendszernapló")
     sp = sub.add_parser("split", help="azonos nevű jelöltekre külön al-ügy + jelentés")
     sp.add_argument("case_id")
+    gr = sub.add_parser("graph", help="entitásgráf: lista / felülvizsgálati sor / export")
+    gr.add_argument("case_id")
+    gr.add_argument("--export", choices=["ftm", "csv"], help="export stdout-ra")
+    gr.add_argument("--review", action="store_true", help="egyezés-jelöltek listája")
+    gr.add_argument("--accept", type=int, help="jelölt elfogadása (same_as id)")
+    gr.add_argument("--reject", type=int, help="jelölt elutasítása (same_as id)")
+    gr.add_argument("--rebuild", action="store_true", help="gráf újraépítése az utolsó futásból")
+    sub.add_parser("mcp", help="MCP-szerver (stdio) – Claude Code / Claude Desktop számára")
     g = sub.add_parser("gui", help="webes felület indítása")
     g.add_argument("--port", type=int, default=8765)
 
@@ -90,6 +98,33 @@ def main(argv=None) -> int:
     if a.cmd == "audit":
         for e in store.get_audit():
             print(f"{e['ts']} {e['actor']:10} {e['event']:18} {e['case_id'] or '-':12} {e['detail'] or ''}")
+        return 0
+    if a.cmd == "graph":
+        from .graph import Graph, build_graph
+        gph = Graph(store)
+        if a.rebuild:
+            fs = store.get_findings(a.case_id)
+            print(build_graph(store, store.get_case(a.case_id), fs[-1]["run_id"] if fs else ""))
+        if a.accept:
+            gph.decide(a.accept, True, "cli")
+        if a.reject:
+            gph.decide(a.reject, False, "cli")
+        if a.export == "ftm":
+            print(gph.export_ftm(a.case_id), end="")
+        elif a.export == "csv":
+            print(gph.export_csv(a.case_id), end="")
+        elif a.review:
+            for q in gph.review_queue(a.case_id):
+                print(f"[{q['id']:4}] {q['score']:5.1f}  {q['a_schema']}:{q['a_caption']}  ≟  {q['b_schema']}:{q['b_caption']}   ({q['reason']})")
+        else:
+            for e in gph.entities(a.case_id):
+                print(f"{'★' if e['is_subject'] else ' '} {e['schema']:12} {e['caption'][:60]:60} {len(e['properties'])} tulajdonság, {sum(len(v) for v in e['properties'].values())} állítás")
+            for x in gph.cross_case(a.case_id):
+                print(f"  ↔ más ügyben is: {x['schema']} {x['caption']} → {x['other_title']} ({x['other_case']})")
+        return 0
+    if a.cmd == "mcp":
+        from .mcp_server import main as mcp_main
+        mcp_main()
         return 0
     if a.cmd == "gui":
         from .webapp import serve

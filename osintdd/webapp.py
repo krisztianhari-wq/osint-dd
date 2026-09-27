@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .core import DEFAULT_MODULES, LEGAL_BASES, MODULES_META, Store, Target
 from .i18n import LEGAL_LABEL, t
+from .graph import Graph
 from .report import render_html
 from .runner import run_case
 
@@ -71,10 +72,10 @@ def page(lang: str, body: str, title: str = "") -> str:
     other = "en" if lang == "hu" else "hu"
     return f"""<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title or t(lang,'app'))}</title><style>{CSS}</style></head><body><div class="wrap">
-<nav><a class="logo" href="/?lang={lang}"><b>{html.escape(t(lang,'app'))}</b><span>{html.escape(t(lang,'tagline'))} · {html.escape(t(lang,'by'))}</span></a>
+<nav><a class="logo" href="/?lang={lang}" style="flex-direction:row;align-items:center;gap:12px"><img src="/static/sadrobot.png" alt="sadrobot" width="40" height="40" style="border-radius:10px"><span style="display:flex;flex-direction:column"><b>{html.escape(t(lang,'app'))}</b><span>{html.escape(t(lang,'tagline'))} · {html.escape(t(lang,'by'))}</span></span></a>
 <div class="langs"><a href="/audit?lang={lang}">{u['audit']}</a><a class="{'on' if lang=='hu' else ''}" href="?lang=hu">HU</a><a class="{'on' if lang=='en' else ''}" href="?lang=en">EN</a></div></nav>
 {body}
-<footer>{html.escape(t(lang,'app'))} · {html.escape(t(lang,'by'))} · {html.escape(u['notes'])}<br><span style="opacity:.7">data: {html.escape(str(_DATA_DIR))}</span></footer></div></body></html>"""
+<footer><img src="/static/sadrobot.png" alt="sadrobot" width="28" height="28" style="border-radius:7px;vertical-align:middle;margin-right:8px">{html.escape(t(lang,'app'))} · {html.escape(t(lang,'by'))} · © 2026 sadrobot · {html.escape(u['notes'])}<br><span style="opacity:.7">data: {html.escape(str(_DATA_DIR))}</span></footer></div></body></html>"""
 
 
 def index(lang: str, error: str = "", vals: dict | None = None) -> str:
@@ -132,7 +133,7 @@ def index(lang: str, error: str = "", vals: dict | None = None) -> str:
         run_btn = f"<a class='btn sm' href='/run/{c['id']}?lang={lang}'>{u['rerun'] if st=='done' else u['run']}</a>" if st != "running" else f"<a class='btn sm ghost' href='/run/{c['id']}?lang={lang}'>{u['running']}</a>"
         indent = "<span style='color:var(--muted)'>└ </span>" if c.get("parent_id") else ""
         rows.append(f"<tr><td>{indent}<b>{e(c['title'])}</b><br><span class='muted'>{e(subj)} · {e(c['purpose'][:60])}</span><br><span class='muted' style='font-size:11.5px'>{e(', '.join(json.loads(c.get('modules_json') or 'null') or DEFAULT_MODULES))}</span></td><td class='muted'>{c['created_at'][:16]}</td>"
-                    f"<td><span class='st {st}'>{e(st)}</span><br><span class='muted'>{n} {u['findings']}</span></td><td class='actions'>{run_btn} {links} <a class='btn sm ghost' href='/log/{c['id']}?lang={lang}'>{u['log']}</a></td></tr>")
+                    f"<td><span class='st {st}'>{e(st)}</span><br><span class='muted'>{n} {u['findings']}</span></td><td class='actions'>{run_btn} {links} <a class='btn sm ghost' href='/log/{c['id']}?lang={lang}'>{u['log']}</a> <a class='btn sm ghost' href='/graph/{c['id']}?lang={lang}'>{t(lang,'graph_link')}</a></td></tr>")
     table = f"<table><tr><th>{u['title']}</th><th>{u['created']}</th><th>{u['status']}</th><th></th></tr>{''.join(rows)}</table>" if rows else f"<p class='muted'>{u['empty']}</p>"
     return page(lang, form + f"<h2>{u['cases']}</h2><div class='card'>{table}</div>")
 
@@ -222,7 +223,7 @@ def report_page(lang: str, cid: str) -> str:
             f"<li><a href='/report/{k['id']}?lang={lang}'>{html.escape(k['title'])}</a> <span class='st {k['status']}'>{html.escape('running' if k['id'] in RUNNING else k['status'])}</span></li>" for k in kids) + "</ul></div>"
     if c.get("parent_id"):
         refine = f"<p class='muted'>{t(lang,'parent')}: <a href='/report/{c['parent_id']}?lang={lang}'>{c['parent_id']}</a></p>" + refine
-    body = f"<p><a href='/?lang={lang}'>{u['back']}</a> &nbsp; <a class='btn sm' href='{pdf}' target='_blank'>{u['pdf']}</a> <a class='btn sm ghost' href='/run/{cid}?lang={lang}'>{u['rerun']}</a> <a class='btn sm danger' href='/delete/{cid}?lang={lang}' onclick=\"return confirm('{u['confirm_del']}')\">{u['delete']}</a></p>{refine}<style>{RCSS}</style><div class='page' style='padding:0'>{inner}</div>"
+    body = f"<p><a href='/?lang={lang}'>{u['back']}</a> &nbsp; <a class='btn sm' href='{pdf}' target='_blank'>{u['pdf']}</a> <a class='btn sm ghost' href='/run/{cid}?lang={lang}'>{u['rerun']}</a> <a class='btn sm ghost' href='/graph/{cid}?lang={lang}'>{t(lang,'graph_link')}</a> <a class='btn sm danger' href='/delete/{cid}?lang={lang}' onclick=\"return confirm('{u['confirm_del']}')\">{u['delete']}</a></p>{refine}<style>{RCSS}</style><div class='page' style='padding:0'>{inner}</div>"
     return page(lang, body, c["title"])
 
 
@@ -232,6 +233,37 @@ def log_page(lang: str, cid: str) -> str:
     rows = "".join(f"<tr><td class='muted'>{q['ts'][11:19]}</td><td>{html.escape(q['source'])}</td><td>{html.escape(q['action'])}</td><td class='muted' style='font-size:12px;word-break:break-all'>{html.escape((q['request'] or '')[:160])}</td><td>{html.escape(q['status'] or '')}</td><td>{q['duration_ms']}</td><td>{'' if q['result_count'] is None else q['result_count']}</td><td class='muted'>{html.escape((q['error'] or '')[:80])}</td></tr>" for q in STORE.get_query_log(cid))
     body = f"<p><a href='/?lang={lang}'>{u['back']}</a></p><h2>{html.escape(c['title'])} — {u['log']}</h2><div class='card'><table><tr><th>{t(lang,'time')}</th><th>{t(lang,'source')}</th><th>{t(lang,'action')}</th><th>{t(lang,'request')}</th><th>{t(lang,'status')}</th><th>ms</th><th>{t(lang,'count')}</th><th>error</th></tr>{rows}</table></div>"
     return page(lang, body)
+
+
+def graph_page(lang: str, cid: str) -> str:
+    u = UI[lang]
+    c = STORE.get_case(cid)
+    g = Graph(STORE)
+    e = html.escape
+    queue = g.review_queue(cid)
+    decided = g.review_queue(cid, "accepted") + g.review_queue(cid, "rejected")
+    rows = ""
+    for q in queue:
+        rows += (f"<tr><td><b>{q['score']:.0f}%</b></td><td>{e(q['a_schema'])}: {e(q['a_caption'])}</td><td>{e(q['b_schema'])}: {e(q['b_caption'])}</td><td class='muted'>{e(q['reason'] or '')}</td>"
+                 f"<td><a class='btn sm' href='/graph/{cid}/decide/{q['id']}/1?lang={lang}'>{t(lang,'accept')}</a> <a class='btn sm ghost' href='/graph/{cid}/decide/{q['id']}/0?lang={lang}'>{t(lang,'reject')}</a></td></tr>")
+    review = f"<table><tr><th>score</th><th>A</th><th>B</th><th></th><th></th></tr>{rows}</table>" if rows else f"<p class='muted'>{t(lang,'no_review')}</p>"
+    dec = "".join(f"<li class='muted'>{e(q['a_caption'])} ≟ {e(q['b_caption'])} → <b>{e(q['status'])}</b> ({e(q['decided_by'] or '')}, {e((q['decided_at'] or '')[:16])})</li>" for q in decided)
+    ents = ""
+    for en in g.entities(cid):
+        props = "".join(f"<div class='f' style='grid-template-columns:150px 1fr'><span class='muted' style='font-size:12px'>{e(k)}</span><div>" +
+                        "".join(f"<div style='font-size:13.5px'>{e(st['value'][:160])} <span class='muted' style='font-size:11px'>[{e(st['source'])}]</span>" +
+                                (f" <a href='{e(st['url'])}' target='_blank' style='font-size:11px'>↗</a>" if st.get('url') else "") + "</div>" for st in v[:12]) +
+                        (f"<div class='muted' style='font-size:11px'>… +{len(v)-12}</div>" if len(v) > 12 else "") + "</div></div>" for k, v in en["properties"].items())
+        links = ", ".join(l["b"] if l["a"] == en["id"] else l["a"] for l in en["links"])
+        ents += (f"<details {'open' if en['is_subject'] else ''} style='margin:10px 0'><summary><b>{'★ ' if en['is_subject'] else ''}{e(en['schema'])}</b> · {e(en['caption'])} "
+                 f"<span class='muted' style='font-size:12px'>{sum(len(v) for v in en['properties'].values())} állítás{(' · sameAs: ' + e(links)) if links else ''}</span></summary>{props}</details>")
+    cross = g.cross_case(cid)
+    cross_html = f"<h2>{t(lang,'cross')}</h2><div class='card'><ul>" + "".join(f"<li>{e(x['schema'])} {e(x['caption'])} → <a href='/graph/{x['other_case']}?lang={lang}'>{e(x['other_title'])}</a></li>" for x in cross) + "</ul></div>" if cross else ""
+    body = (f"<p><a href='/report/{cid}?lang={lang}'>← {e(c['title'])}</a> &nbsp; <a class='btn sm ghost' href='/graph/{cid}/export/ftm'>{t(lang,'export_ftm')}</a> "
+            f"<a class='btn sm ghost' href='/graph/{cid}/export/csv'>{t(lang,'export_csv')}</a></p><h2>{t(lang,'graph')} — {e(c['title'])}</h2><p class='muted'>{t(lang,'graph_hint')}</p>"
+            f"<h2>{t(lang,'review')} <span class='muted'>({len(queue)})</span></h2><div class='card'>{review}{('<h3 class=muted style=font-size:12px>' + t(lang,'decided') + '</h3><ul>' + dec + '</ul>') if dec else ''}</div>"
+            f"{cross_html}<h2>{t(lang,'graph')}</h2><div class='card'>{ents or '<p class=muted>–</p>'}</div>")
+    return page(lang, body, c["title"])
 
 
 def audit_page(lang: str) -> str:
@@ -286,6 +318,29 @@ class H(BaseHTTPRequestHandler):
                 return self._send(index(lang, qs.get("err", [""])[0]))
             if p == "/audit":
                 return self._send(audit_page(lang))
+            if p == "/static/sadrobot.png":
+                fp = Path(__file__).parent / "static" / "sadrobot.png"
+                return self._send(fp.read_bytes(), "image/png") if fp.exists() else self._send("not found", "text/plain", 404)
+            if p.startswith("/graph/"):
+                parts = p[7:].split("/")
+                cid = parts[0]
+                if not STORE.get_case(cid):
+                    return self._send("not found", "text/plain", 404)
+                if len(parts) == 4 and parts[1] == "decide":
+                    Graph(STORE).decide(int(parts[2]), parts[3] == "1", "gui")
+                    STORE.audit("same_as_decided", cid, f"id={parts[2]} accept={parts[3]=='1'} by=gui")
+                    return self._redir(f"/graph/{cid}?lang={lang}")
+                if len(parts) == 3 and parts[1] == "export":
+                    g = Graph(STORE)
+                    if parts[2] == "ftm":
+                        b = g.export_ftm(cid).encode("utf-8")
+                        self.send_response(200); self.send_header("Content-Type", "application/x-ndjson; charset=utf-8"); self.send_header("Content-Disposition", f"attachment; filename=osintdd_{cid}.ftm")
+                    else:
+                        b = g.export_csv(cid).encode("utf-8")
+                        self.send_response(200); self.send_header("Content-Type", "text/csv; charset=utf-8"); self.send_header("Content-Disposition", f"attachment; filename=osintdd_{cid}_statements.csv")
+                    self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+                    return None
+                return self._send(graph_page(lang, cid))
             if p.startswith("/run/"):
                 cid = p[5:]
                 if STORE.get_case(cid):
@@ -351,7 +406,7 @@ class H(BaseHTTPRequestHandler):
                     tg.person = tg.email = tg.username = tg.phone = ""
                 mods = [m for m, _ in MODULES_META if form.get(f"mod_{m}") == "on"]
                 if not pc:
-                    mods = [m for m in mods if m not in ("person", "phone", "breach", "social", "face")]
+                    mods = [m for m in mods if m not in ("person", "phone", "breach", "social", "face")]  # paste cégre is futhat
                 cid = STORE.create_case(form["title"].strip(), form["purpose"].strip(), form.get("legal_basis", "nem_szemelyes"), tg, pc,
                                         form.get("requester", "").strip(), form.get("lang", lang), mods)
             except Exception as e:  # noqa: BLE001

@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "osint-dd"
-version = "0.2.1"
+version = "0.3.0"
 description = "Local, logged due-diligence / OSINT assistant for companies, domains and (with legal basis) people. HU/EN, PDF reports. Crafted by sadrobot."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Proprietary – see LICENSE (EN/HU)" }
 authors = [{ name = "sadrobot" }]
 requires-python = ">=3.10"
 keywords = ["osint", "due-diligence", "kyc", "sanctions", "gdpr", "security"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
+  "License :: Other/Proprietary License",
   "Operating System :: OS Independent",
   "Topic :: Security",
 ]
@@ -26,6 +26,7 @@ dependencies = [
   "phonenumbers>=8.13",
   "reportlab>=4.2",
   "markdown>=3.6",
+  "mcp>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -40,3 +41,6 @@ Homepage = "https://github.com/krisztianhari-wq/osint-dd"
 
 [tool.setuptools.packages.find]
 include = ["osintdd*"]
+
+[tool.setuptools.package-data]
+osintdd = ["static/*.png"]

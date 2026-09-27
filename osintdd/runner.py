@@ -8,13 +8,14 @@ from typing import Callable
 
 from .core import Finding, QueryLogger, Store
 from .http import Http
-from .sources import company, domain, grey, manual, person, phone, sanctions, web
+from .sources import company, domain, geo, github, grey, manual, paste, person, phone, sanctions, web
 
 MODULES: list[tuple[str, Callable]] = [
     ("company", company.run), ("sanctions", sanctions.run), ("domain", domain.run),
-    ("web", web.run), ("person", person.run), ("phone", phone.run), ("grey", grey.run), ("manual", manual.run),
+    ("web", web.run), ("github", github.run), ("geo", geo.run), ("person", person.run), ("phone", phone.run),
+    ("grey", grey.run), ("paste", paste.run), ("manual", manual.run),
 ]
-GREY = {"breach", "aleph", "social", "face"}
+GREY = {"breach", "aleph", "social", "face", "paste"}
 
 
 def run_case(store: Store, case_id: str, progress: Callable[[str], None] | None = None,
@@ -33,7 +34,10 @@ def run_case(store: Store, case_id: str, progress: Callable[[str], None] | None 
         enabled = set(modules or case.get("modules") or [])
         for name, fn in MODULES:
             if name == "grey":
-                if not (enabled & GREY):
+                if not (enabled & GREY - {"paste"}):
+                    continue
+            elif name == "manual":
+                if not (enabled & {"manual", "dorks"}):
                     continue
             elif name not in enabled:
                 continue
@@ -41,7 +45,7 @@ def run_case(store: Store, case_id: str, progress: Callable[[str], None] | None 
             try:
                 fs = fn(case["target"], http, log, case)
             except Exception as e:  # noqa: BLE001
-                fs = [Finding(name, name if name in ("company", "sanctions", "web", "domain", "person", "phone", "manual") else "web",
+                fs = [Finding(name, name if name in ("company", "sanctions", "web", "domain", "person", "phone", "manual", "paste", "geo") else "web",
                               f"Modulhiba: {name}", f"{e}", severity="low", data={"trace": traceback.format_exc()[-1500:]})]
                 log.log(name, "module", {}, "ERROR", 0, 0, str(e))
             n = store.add_findings(case_id, run_id, fs)
@@ -54,6 +58,14 @@ def run_case(store: Store, case_id: str, progress: Callable[[str], None] | None 
     if amb:
         store.add_findings(case_id, run_id, amb)
         store.audit("identity_ambiguous", case_id, "; ".join(f.title for f in amb))
+    say("▸ graph")
+    try:
+        from .graph import build_graph
+        gi = build_graph(store, store.get_case(case_id), run_id)
+        say(f"  graph: {gi['entities']} entitás, {gi['pending']} egyezés-jelölt")
+    except Exception as e:  # noqa: BLE001
+        store.audit("graph_failed", case_id, str(e)[:300])
+        say(f"  graph: hiba {e}")
     say("▸ report")
     from .report import build_report
     path = build_report(store, case_id, run_id)
