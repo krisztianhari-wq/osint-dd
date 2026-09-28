@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=Europe/Budapest \
 
 RUN apt-get update -q && apt-get install -y -q --no-install-recommends fonts-dejavu-core whois ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10002 --home /app osintdd && mkdir -p /data && chown osintdd /data
+    && useradd --system --uid 10005 --home /app osintdd && mkdir -p /data && chown osintdd /data
 WORKDIR /app
 COPY requirements-server.txt .
 RUN pip install --no-cache-dir -r requirements-server.txt
