@@ -8,4 +8,4 @@ dist/
 *.spec
 *.egg-info/
 .DS_Store
-BUILD
+osintdd/BUILD

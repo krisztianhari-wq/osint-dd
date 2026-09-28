@@ -43,4 +43,4 @@ Homepage = "https://github.com/krisztianhari-wq/osint-dd"
 include = ["osintdd*"]
 
 [tool.setuptools.package-data]
-osintdd = ["static/*.png", "static/fonts/*.woff2"]
+osintdd = ["static/*.png", "static/fonts/*.woff2", "BUILD"]

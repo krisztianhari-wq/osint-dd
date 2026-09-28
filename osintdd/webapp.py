@@ -46,6 +46,9 @@ def _allowed_emails() -> set[str]:
 
 
 ALLOWED_EMAILS = _allowed_emails()
+_BUILD_FILE = Path(__file__).parent / "BUILD"
+if not os.environ.get("OSINTDD_BUILD") and _BUILD_FILE.exists():
+    os.environ["OSINTDD_BUILD"] = _BUILD_FILE.read_text().strip()
 
 STORE = Store()
 PROGRESS: dict[str, list[str]] = {}
