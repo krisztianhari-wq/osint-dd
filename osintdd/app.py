@@ -23,6 +23,7 @@ def _free_port(start: int) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="osint-dd", description="osint-dd · Átvilágító – helyi due diligence asszisztens (sadrobot)")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--host", default=None, help="bind cím (alapértelmezés 127.0.0.1; 0.0.0.0 csak OSINTDD_AUTH=proxy módban)")
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--version", action="store_true")
     a = ap.parse_args(argv)
@@ -39,11 +40,11 @@ def main(argv=None) -> int:
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip().strip('"'))
-    port = _free_port(a.port)
+    port = _free_port(a.port) if (a.host or os.environ.get("OSINTDD_BIND", "127.0.0.1")) in ("127.0.0.1", "localhost") else a.port
     if not a.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     from .webapp import serve
-    serve(port)
+    serve(port, a.host)
     return 0
 
 

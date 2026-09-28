@@ -58,7 +58,7 @@ def backends() -> list[str]:
     """Elérhető háttérrendszerek prioritási sorrendben. OSINTDD_LLM=api|cli|ollama|rules kényszeríti."""
     forced = os.environ.get("OSINTDD_LLM")
     if forced:
-        return [forced]
+        return ["rules"] if forced == "stored" else [forced]
     out = []
     if api_available():
         out.append("api")

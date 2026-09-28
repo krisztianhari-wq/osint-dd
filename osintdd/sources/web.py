@@ -11,21 +11,57 @@ NEG_EN = ["fraud", "lawsuit", "sanction", "investigation", "data breach", "scand
 HU_REGISTRY_SITES = ["nemzeticegtar.hu", "e-cegjegyzek.hu", "ceginformacio.hu", "opten.hu", "cegvilag.hu", "kozbeszerzes.hu", "birosag.hu", "nav.gov.hu"]
 
 
-def _ddg(http: Http, source: str, query: str, kind: str = "text", region: str = "hu-hu", max_results: int = 10) -> list[dict]:
+import os
+
+BRAVE_KEY = os.environ.get("OSINTDD_BRAVE_KEY", "")
+SEARCH_BACKEND = os.environ.get("OSINTDD_SEARCH", "auto")   # auto | ddg | brave
+
+
+def _brave(http: Http, source: str, query: str, kind: str, region: str, max_results: int) -> list[dict]:
+    """Brave Search API (ingyenes keret 2000/hó) – adatközponti IP-ről megbízhatóbb, mint a DDG."""
     started = time.time()
+    country = "HU" if region.startswith("hu") else "US"
+    lang = "hu" if region.startswith("hu") else "en"
+    url = "https://api.search.brave.com/res/v1/" + ("web/search" if kind == "text" else "news/search")
+    try:
+        r = http.client.get(url, params={"q": query, "count": min(max_results, 20), "country": country, "search_lang": lang},
+                            headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_KEY})
+        body = r.json() if r.is_success else {}
+        items = (body.get("web") or body.get("results") and body or {}).get("results", []) if kind == "text" else body.get("results", [])
+        if kind == "text" and not items:
+            items = (body.get("web") or {}).get("results", [])
+        out = [{"title": i.get("title", ""), "href": i.get("url", ""), "body": i.get("description", ""), "date": i.get("age", ""), "url": i.get("url", ""),
+                "source": (i.get("meta_url") or {}).get("hostname", "")} for i in items]
+        http.log.log(source, f"brave_{kind}", {"q": query, "region": region}, f"HTTP {r.status_code}", started, len(out), None if r.is_success else r.text[:200], raw=out)
+        return out
+    except Exception as e:  # noqa: BLE001
+        http.log.log(source, f"brave_{kind}", {"q": query, "region": region}, "ERROR", started, 0, str(e))
+        return []
+
+
+def _ddg(http: Http, source: str, query: str, kind: str = "text", region: str = "hu-hu", max_results: int = 10) -> list[dict]:
+    """Keresés: DDG, hiba/üres esetén Brave (ha van kulcs). OSINTDD_SEARCH=brave → csak Brave."""
+    if SEARCH_BACKEND == "brave" and BRAVE_KEY:
+        return _brave(http, source, query, kind, region, max_results)
+    started = time.time()
+    err = None
     try:
         from ddgs import DDGS
         with DDGS() as d:
             res = d.text(query, region=region, max_results=max_results) if kind == "text" else d.news(query, region=region, max_results=max_results)
         res = res or []
         http.log.log(source, f"ddg_{kind}", {"q": query, "region": region}, "OK", started, len(res), raw=res)
-        return res
+        if res:
+            return res
     except Exception as e:  # noqa: BLE001
-        if "No results" in str(e):
+        err = str(e)
+        if "No results" in err:
             http.log.log(source, f"ddg_{kind}", {"q": query, "region": region}, "OK", started, 0)
         else:
-            http.log.log(source, f"ddg_{kind}", {"q": query, "region": region}, "ERROR", started, 0, str(e))
-        return []
+            http.log.log(source, f"ddg_{kind}", {"q": query, "region": region}, "ERROR", started, 0, err)
+    if BRAVE_KEY and SEARCH_BACKEND != "ddg" and (err is None or "No results" not in err):
+        return _brave(http, source, query, kind, region, max_results)
+    return []
 
 
 def _neg_sev(r: dict, words: list[str]) -> str:

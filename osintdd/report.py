@@ -29,11 +29,12 @@ FONT_CANDIDATES = {
               "/System/Library/Fonts/Supplemental/Arial.ttf", f"{_WIN}\\segoeuil.ttf", f"{_WIN}\\arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
               "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"],
 }
-ACCENT = "#2F6F8F"   # nyugodt kékeszöld
-INK = "#1F2933"
-MUTED = "#7B8794"
-LINE = "#E4E7EB"
-SEV_COLOR = {"high": "#B23A48", "medium": "#C97B2A", "low": "#8A8F3C", "info": "#8AA1B1"}
+ACCENT = "#0a8aa4"   # sadrobot teal
+INK = "#0b1f4d"      # sadrobot tintakék
+INK2 = "#46587a"
+MUTED = "#7686a2"
+LINE = "#dde6f1"
+SEV_COLOR = {"high": "#c2412c", "medium": "#b7791f", "low": "#2451b8", "info": "#7686a2"}
 
 
 def _grouped(findings: list[dict]) -> "OrderedDict[str, list[dict]]":
@@ -61,8 +62,12 @@ def build_report(store: Store, case_id: str, run_id: str) -> Path:
     lang = case.get("lang", "hu")
     findings = store.get_findings(case_id, run_id)
     qlog = store.get_query_log(case_id, run_id)
-    summary_md, backend = summarize(case, findings, lang)
-    store.save_summary(case_id, run_id, summary_md, backend)
+    stored = store.get_summary(case_id, run_id) if os.environ.get("OSINTDD_LLM") == "stored" else None
+    if stored and stored.get("summary_md"):
+        summary_md, backend = stored["summary_md"], stored.get("backend") or "stored"
+    else:
+        summary_md, backend = summarize(case, findings, lang)
+        store.save_summary(case_id, run_id, summary_md, backend)
     store.audit("summary_generated", case_id, f"backend={backend} run={run_id}")
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
     safe = re.sub(r"[^\w-]+", "_", case["title"])[:40]
@@ -98,24 +103,25 @@ def _markdown(case, lang, findings, qlog, summary_md, backend, run_id, generated
 
 # ---------------------------------------------------------------- HTML
 CSS = """
-:root{--ink:%(ink)s;--muted:%(muted)s;--accent:%(accent)s;--line:%(line)s;--bg:#FBFBFA}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 -apple-system,'Inter','Segoe UI',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+:root{--ink:%(ink)s;--muted:%(muted)s;--accent:%(accent)s;--line:%(line)s;--bg:#f5f8fc;--card:#fff;--ink2:#46587a;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#07122b;--card:#0e1c3d;--ink:#eaf2fb;--ink2:#aebcd3;--muted:#8193ae;--line:#1c2e55;--accent:#5ad1e8;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 Figtree,'Avenir Next','Segoe UI',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 .page{max-width:900px;margin:0 auto;padding:56px 40px 80px}
 header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:34px}
-h1{font-weight:500;font-size:28px;letter-spacing:-.01em;margin:0 0 4px}h2{font-weight:500;font-size:18px;margin:44px 0 14px;color:var(--ink);letter-spacing:.01em}
+h1{font-weight:800;font-size:30px;letter-spacing:-.03em;margin:0 0 4px}h2{font-weight:800;font-size:19px;margin:44px 0 14px;color:var(--ink);letter-spacing:-.02em}
 h3{font-size:15px;font-weight:600;margin:20px 0 6px}.kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
 .meta{color:var(--muted);font-size:13px;text-align:right;line-height:1.5}.brand{font-size:12px;color:var(--muted);letter-spacing:.06em}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 28px;margin:0 0 8px}.grid div{padding:10px 0;border-bottom:1px solid var(--line)}
 .grid b{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:2px}
-.summary{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 30px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.summary{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 30px;box-shadow:0 1px 2px rgba(11,31,77,.05),0 10px 30px -18px rgba(11,31,77,.25)}
 .summary p:first-child{margin-top:0}.summary blockquote{margin:0 0 14px;padding:8px 14px;border-left:3px solid var(--line);color:var(--muted);font-size:13px}
 .f{display:grid;grid-template-columns:86px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}.f:last-child{border-bottom:0}
 .sev{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 0;text-align:center;border-radius:999px;height:22px;align-self:start;color:#fff}
-.f .t{font-weight:600}.f .s{color:#3E4C59;font-size:14px}.f .src{color:var(--muted);font-size:12px}.f a{color:var(--accent);text-decoration:none;word-break:break-all}
+.f .t{font-weight:600}.f .s{color:var(--ink2);font-size:14px}.f .src{color:var(--muted);font-size:12px}.f a{color:var(--accent);text-decoration:none;word-break:break-all}
 table{width:100%%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:10.5px}
 .note{color:var(--muted);font-size:12.5px}footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;justify-content:space-between}
 details summary{cursor:pointer;color:var(--accent);font-weight:500}
-@media print{body{background:#fff}.page{padding:0;max-width:none}.summary{box-shadow:none}h2{break-after:avoid}.f{break-inside:avoid}a[href]:after{content:''}@page{margin:18mm 16mm}}
+@media print{body{background:#fff;color:#0b1f4d}.page{padding:0;max-width:none}.summary{box-shadow:none}h2{break-after:avoid}.f{break-inside:avoid}a[href]:after{content:''}@page{margin:18mm 16mm}}
 """ % dict(ink=INK, muted=MUTED, accent=ACCENT, line=LINE)
 
 
@@ -190,7 +196,7 @@ def _pdf(path: Path, case, lang, findings, qlog, summary_md, backend, run_id, ge
     ink, muted, accent, line = colors.HexColor(INK), colors.HexColor(MUTED), colors.HexColor(ACCENT), colors.HexColor(LINE)
     S = {
         "kicker": ParagraphStyle("k", fontName=bold_f, fontSize=7.5, textColor=accent, leading=10, spaceAfter=3),
-        "h1": ParagraphStyle("h1", fontName=light_f, fontSize=22, textColor=ink, leading=27, spaceAfter=2),
+        "h1": ParagraphStyle("h1", fontName=bold_f, fontSize=22, textColor=ink, leading=27, spaceAfter=2),
         "brand": ParagraphStyle("b", fontName=body_f, fontSize=8, textColor=muted, leading=11),
         "meta": ParagraphStyle("m", fontName=body_f, fontSize=8.5, textColor=muted, leading=12, alignment=TA_RIGHT),
         "h2": ParagraphStyle("h2", fontName=bold_f, fontSize=12.5, textColor=ink, leading=16, spaceBefore=16, spaceAfter=7),
@@ -200,7 +206,7 @@ def _pdf(path: Path, case, lang, findings, qlog, summary_md, backend, run_id, ge
         "label": ParagraphStyle("l", fontName=bold_f, fontSize=6.8, textColor=muted, leading=9),
         "val": ParagraphStyle("v", fontName=body_f, fontSize=9.5, textColor=ink, leading=13),
         "ft": ParagraphStyle("ft", fontName=bold_f, fontSize=9.3, textColor=ink, leading=13),
-        "fs": ParagraphStyle("fs", fontName=body_f, fontSize=8.6, textColor=colors.HexColor("#3E4C59"), leading=12.5),
+        "fs": ParagraphStyle("fs", fontName=body_f, fontSize=8.6, textColor=colors.HexColor(INK2), leading=12.5),
         "fu": ParagraphStyle("fu", fontName=body_f, fontSize=7.6, textColor=accent, leading=10.5),
         "bul": ParagraphStyle("bul", fontName=body_f, fontSize=9.5, textColor=ink, leading=14, leftIndent=12, bulletIndent=2, spaceAfter=2),
         "cell": ParagraphStyle("c", fontName=body_f, fontSize=6.9, textColor=ink, leading=8.8),

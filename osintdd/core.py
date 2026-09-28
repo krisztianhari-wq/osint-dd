@@ -104,11 +104,35 @@ class Finding:
         return asdict(self)
 
 
+def _db_key() -> str | None:
+    """SQLCipher-kulcs (hex) fájlból: OSINTDD_DB_KEY_FILE vagy /run/secrets/osintdd_db_key. Nincs fájl → titkosítatlan SQLite."""
+    for cand in [os.environ.get("OSINTDD_DB_KEY_FILE"), "/run/secrets/osintdd_db_key"]:
+        if cand and os.path.exists(cand):
+            k = Path(cand).read_text().strip()
+            if len(k) < 32:
+                raise SystemExit("osintdd_db_key túl rövid (legalább 32 hex karakter kell)")
+            return k
+    return None
+
+
 class Store:
     def __init__(self, path: Path = DB_PATH):
         self.path = path
-        self.conn = sqlite3.connect(str(path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        key = _db_key()
+        self.encrypted = False
+        if key:
+            try:
+                import sqlcipher3
+            except ImportError as e:  # noqa: BLE001
+                raise SystemExit("SQLCipher-kulcs van megadva, de a sqlcipher3 modul hiányzik (pip install sqlcipher3-wheels)") from e
+            self.conn = sqlcipher3.connect(str(path), check_same_thread=False)
+            self.conn.execute(f"PRAGMA key = \"x'{key}'\"")
+            self.conn.execute("PRAGMA cipher_memory_security = ON")
+            self.conn.row_factory = sqlcipher3.Row
+            self.encrypted = True
+        else:
+            self.conn = sqlite3.connect(str(path), check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
         self._init()
 
     def _init(self) -> None:

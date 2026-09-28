@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +16,36 @@ from .report import render_html
 from .runner import run_case
 
 from .core import BASE_DIR as _DATA_DIR
+
+import secrets as _secrets
+
+AUTH_MODE = os.environ.get("OSINTDD_AUTH", "local")          # local (127.0.0.1, nincs belépés) | proxy (oauth2-proxy / passkey a Caddy mögött)
+PROXY_EMAIL_HEADER = "X-Auth-Request-Email"
+PROXY_SECRET_HEADER = "X-Osintdd-Proxy"
+
+
+def _read_secret(env: str, default_file: str) -> str:
+    v = os.environ.get(env, "")
+    if v:
+        return v.strip()
+    for cand in [os.environ.get(env + "_FILE"), default_file]:
+        if cand and os.path.exists(cand):
+            return Path(cand).read_text().strip()
+    return ""
+
+
+PROXY_SECRET = _read_secret("OSINTDD_PROXY_SECRET", "/run/secrets/osintdd_proxy_secret")
+
+
+def _allowed_emails() -> set[str]:
+    out = {e.strip().lower() for e in os.environ.get("OSINTDD_ALLOWED_EMAILS", "").split(",") if e.strip()}
+    f = os.environ.get("OSINTDD_ALLOWED_EMAILS_FILE", "/etc/osintdd/emails.txt")
+    if os.path.exists(f):
+        out |= {l.strip().lower() for l in Path(f).read_text().splitlines() if l.strip() and not l.startswith("#")}
+    return out
+
+
+ALLOWED_EMAILS = _allowed_emails()
 
 STORE = Store()
 PROGRESS: dict[str, list[str]] = {}
@@ -43,27 +74,46 @@ UI = {
                grey_hint="Leaked databases, investigative archives, social profiles. They run only with the person module and a documented legal basis; the selection is written to the audit log."),
 }
 
-CSS = """
-:root{--ink:#1F2933;--muted:#7B8794;--accent:#2F6F8F;--line:#E4E7EB;--bg:#FBFBFA;--card:#fff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,'Inter','Segoe UI',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}.wrap{max-width:1040px;margin:0 auto;padding:40px 28px 80px}
-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:38px}.logo{display:flex;flex-direction:column;gap:2px}.logo b{font-weight:500;font-size:20px;letter-spacing:-.01em}
-.logo span{font-size:12px;color:var(--muted)}.langs a{font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-left:14px;color:var(--muted)}.langs a.on{color:var(--accent);font-weight:600}
-h2{font-weight:500;font-size:17px;margin:34px 0 14px;letter-spacing:.01em}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-label{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 5px}
-input[type=text],select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;background:#fff;color:var(--ink);outline:none;transition:border .15s}
-input:focus,select:focus{border-color:var(--accent)}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px 20px;margin-bottom:16px}
+FONT_CSS = "".join(
+    f"@font-face{{font-family:Figtree;font-weight:{w};font-display:swap;src:url(/static/fonts/figtree-{sub}-{w}-normal.woff2) format('woff2')}}"
+    for sub in ("latin", "latin-ext") for w in (400, 600, 800))
+
+CSS = FONT_CSS + """
+:root{--bg:#f5f8fc;--bg2:#eaf1f9;--card:#fff;--ink:#0b1f4d;--ink2:#46587a;--muted:#7686a2;--line:#dde6f1;--accent:#0a8aa4;--accent-soft:#e2f5f9;
+--warn:#c2412c;--warn-soft:#fdebe7;--blue:#2451b8;--blue-soft:#e6eefc;--cyan:#12c8e6;--amber:#b7791f;--amber-soft:#fff4e0;
+--shadow:0 1px 2px rgba(11,31,77,.05),0 10px 30px -18px rgba(11,31,77,.25);--font:Figtree,"Avenir Next","Segoe UI",system-ui,-apple-system,sans-serif;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#07122b;--bg2:#0c1a38;--card:#0e1c3d;--ink:#eaf2fb;--ink2:#aebcd3;--muted:#8193ae;--line:#1c2e55;--accent:#5ad1e8;--accent-soft:#0f3345;
+--warn:#ff8a73;--warn-soft:#3a1d1a;--blue:#8fb0ff;--blue-soft:#17264a;--amber:#f0b25a;--amber-soft:#3a2a10;--shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px -18px rgba(0,0,0,.7);color-scheme:dark}}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15.5px/1.6 var(--font);-webkit-font-smoothing:antialiased;padding:0 24px}
+a{color:var(--accent);text-decoration:none}.wrap{max-width:1100px;margin:0 auto;padding:0 0 72px}
+nav{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:18px;border-bottom:1px solid var(--line);margin-bottom:36px}
+.logo{display:inline-flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none}.logo img{width:34px;height:34px;border-radius:9px;background:#fff;padding:2px}
+.logo b{font-weight:800;font-size:19px;letter-spacing:-.01em}.logo span span{font-size:12.5px;color:var(--muted);font-weight:400}
+.langs{display:flex;align-items:center;gap:8px}.langs a{font:600 13px var(--font);color:var(--ink2);padding:5px 10px;border-radius:8px;text-decoration:none}
+.langs a:hover{background:var(--bg2);color:var(--ink)}.langs a.on{background:var(--ink);color:var(--bg)}
+h2{font-size:22px;font-weight:800;letter-spacing:-.02em;margin:36px 0 14px}h3{font-weight:700;font-size:15px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;box-shadow:var(--shadow)}
+label{display:block;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 5px}
+input[type=text],select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:14.5px;background:var(--card);color:var(--ink);outline:none;transition:border .15s,box-shadow .15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px 20px;margin-bottom:16px}
 .person{border-top:1px dashed var(--line);margin-top:8px;padding-top:18px}.person .row{opacity:.55;transition:opacity .2s}.person.on .row{opacity:1}
 .chk{display:flex;align-items:center;gap:10px;font-size:14px;margin:6px 0 14px}.chk input{width:16px;height:16px;accent-color:var(--accent)}
-.btn{display:inline-block;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:999px;padding:9px 20px;font:inherit;font-size:14px;cursor:pointer;transition:opacity .15s}
-.btn:hover{opacity:.9}.btn.ghost{background:transparent;color:var(--accent)}.btn.sm{padding:5px 12px;font-size:12.5px}.btn.danger{border-color:#B23A48;color:#B23A48;background:transparent}
+.btn{display:inline-block;border:1px solid var(--ink);background:var(--ink);color:var(--bg);border-radius:999px;padding:9px 20px;font:600 14px var(--font);cursor:pointer;transition:opacity .15s,transform .1s}
+.btn:hover{opacity:.9}.btn:active{transform:translateY(1px)}.btn.ghost{background:transparent;color:var(--ink)}.btn.sm{padding:5px 12px;font-size:12.5px}
+.btn.danger{border-color:var(--warn);color:var(--warn);background:transparent}
 .hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}.st{font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;padding:3px 10px;border-radius:999px;background:#EEF2F5;color:#52606D}
-.st.done{background:#E3F1EA;color:#2E6B44}.st.running{background:#FFF1DC;color:#9C5B10}.muted{color:var(--muted);font-size:13px}footer{margin-top:60px;color:var(--muted);font-size:12px;text-align:center;letter-spacing:.04em}
-pre{background:#F5F7F8;border-radius:10px;padding:14px;font-size:12.5px;overflow:auto;max-height:280px}.actions a{margin-right:10px}
+th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.st{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--bg2);color:var(--ink2)}
+.st.done{background:var(--accent-soft);color:var(--accent)}.st.running{background:var(--amber-soft);color:var(--amber)}.st.error{background:var(--warn-soft);color:var(--warn)}
+.muted{color:var(--muted);font-size:13px}footer{margin-top:60px;color:var(--muted);font-size:12.5px;text-align:center;letter-spacing:.02em;border-top:1px solid var(--line);padding-top:22px}
+pre{background:var(--bg2);border-radius:10px;padding:14px;font-size:12.5px;overflow:auto;max-height:280px;color:var(--ink)}.actions a{margin-right:8px}
+.err{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13.5px}
 .mods{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px 18px;margin:6px 0 4px}.mods label{display:flex;align-items:center;gap:9px;font-size:13.5px;text-transform:none;letter-spacing:0;color:var(--ink);font-weight:400;margin:0}.mods input{accent-color:var(--accent);width:15px;height:15px}
-.grey{border:1px dashed #D9B98A;background:#FFFBF3;border-radius:12px;padding:14px 16px;margin-top:14px}.grey .gt{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#9C5B10;font-weight:600;margin-bottom:4px}.grey .gh{font-size:12.5px;color:#7B6A4B;margin:0 0 8px}
-.err{background:#FBECEE;color:#8B2C38;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13.5px}
+.grey{border:1px dashed var(--amber);background:var(--amber-soft);border-radius:12px;padding:14px 16px;margin-top:14px}.grey .gt{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);font-weight:700;margin-bottom:4px}.grey .gh{font-size:12.5px;color:var(--ink2);margin:0 0 8px}
+details summary{cursor:pointer}
+@media (max-width:640px){body{padding:0 16px}.card{padding:18px}nav{flex-wrap:wrap}}
 """
 
 
@@ -72,10 +122,10 @@ def page(lang: str, body: str, title: str = "") -> str:
     other = "en" if lang == "hu" else "hu"
     return f"""<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title or t(lang,'app'))}</title><style>{CSS}</style></head><body><div class="wrap">
-<nav><a class="logo" href="/?lang={lang}" style="flex-direction:row;align-items:center;gap:12px"><img src="/static/sadrobot.png" alt="sadrobot" width="40" height="40" style="border-radius:10px"><span style="display:flex;flex-direction:column"><b>{html.escape(t(lang,'app'))}</b><span>{html.escape(t(lang,'tagline'))} · {html.escape(t(lang,'by'))}</span></span></a>
+<nav><a class="logo" href="/?lang={lang}"><img src="/static/sadrobot.png" alt="sadrobot"><span style="display:flex;flex-direction:column;line-height:1.2"><b>{html.escape(t(lang,'app'))}</b><span>{html.escape(t(lang,'tagline'))}</span></span></a>
 <div class="langs"><a href="/audit?lang={lang}">{u['audit']}</a><a class="{'on' if lang=='hu' else ''}" href="?lang=hu">HU</a><a class="{'on' if lang=='en' else ''}" href="?lang=en">EN</a></div></nav>
 {body}
-<footer><img src="/static/sadrobot.png" alt="sadrobot" width="28" height="28" style="border-radius:7px;vertical-align:middle;margin-right:8px">{html.escape(t(lang,'app'))} · {html.escape(t(lang,'by'))} · © 2026 sadrobot · {html.escape(u['notes'])}<br><span style="opacity:.7">data: {html.escape(str(_DATA_DIR))}</span></footer></div></body></html>"""
+<footer><img src="/static/sadrobot.png" alt="sadrobot" width="28" height="28" style="border-radius:7px;vertical-align:middle;margin-right:8px;background:#fff">{html.escape(t(lang,'app'))} · {html.escape(t(lang,'by'))} · © 2026 sadrobot<br><span style="opacity:.8">{html.escape(u['notes'])}</span><br><span style="opacity:.6">data: {html.escape(str(_DATA_DIR))}{(' · build ' + html.escape(os.environ.get('OSINTDD_BUILD',''))) if os.environ.get('OSINTDD_BUILD') else ''}</span></footer></div></body></html>"""
 
 
 def index(lang: str, error: str = "", vals: dict | None = None) -> str:
@@ -156,13 +206,13 @@ WORKING = {"hu": ("Már dolgozunk rajta…", "Nyilvános forrásokat kérdezünk
            "en": ("We're working on it…", "Querying public sources, then Claude organises and summarises them. This takes 1–3 minutes.")}
 SCENE_CSS = """
 .scene{position:relative;height:150px;margin:18px auto 8px;max-width:640px;display:grid;grid-template-columns:repeat(6,1fr);align-items:center;justify-items:center}
-.scene svg.ic{width:48px;height:48px;fill:none;stroke:#C5CDD4;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:stroke .4s}
+.scene svg.ic{width:48px;height:48px;fill:none;stroke:var(--line);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:stroke .4s}
 .scene .ic{animation:glow 6s infinite}.scene .ic:nth-child(2){animation-delay:1s}.scene .ic:nth-child(3){animation-delay:2s}.scene .ic:nth-child(4){animation-delay:3s}.scene .ic:nth-child(5){animation-delay:4s}.scene .ic:nth-child(6){animation-delay:5s}
-@keyframes glow{0%,14%{stroke:#C5CDD4}6%{stroke:#2F6F8F}}
-.lens{position:absolute;top:22px;left:calc(8.333% - 43px);width:86px;height:86px;animation:sweep 6s ease-in-out infinite;filter:drop-shadow(0 6px 10px rgba(47,111,143,.18))}
+@keyframes glow{0%,14%{stroke:var(--line)}6%{stroke:var(--accent)}}
+.lens{position:absolute;top:22px;left:calc(8.333% - 43px);width:86px;height:86px;animation:sweep 6s ease-in-out infinite;filter:drop-shadow(0 6px 10px rgba(11,31,77,.18))}
 @keyframes sweep{0%,100%{left:calc(8.333% - 43px);transform:rotate(0)}16%{left:calc(25% - 43px);transform:rotate(-4deg)}33%{left:calc(41.667% - 43px);transform:rotate(3deg)}50%{left:calc(58.333% - 43px);transform:rotate(-3deg)}66%{left:calc(75% - 43px);transform:rotate(4deg)}83%{left:calc(91.667% - 43px);transform:rotate(-2deg)}}
-.lens circle.g{fill:rgba(255,255,255,.55);stroke:#2F6F8F;stroke-width:3}.lens path{stroke:#2F6F8F;stroke-width:5;stroke-linecap:round}.lens .sh{fill:none;stroke:#fff;stroke-width:2.5;opacity:.8}
-.working{text-align:center}.working h3{font-weight:500;font-size:20px;margin:6px 0 4px;letter-spacing:-.01em}.working p{color:var(--muted);margin:0 0 14px;font-size:13.5px}
+.lens circle.g{fill:rgba(255,255,255,.55);stroke:var(--accent);stroke-width:3}.lens path{stroke:var(--accent);stroke-width:5;stroke-linecap:round}.lens .sh{fill:none;stroke:#fff;stroke-width:2.5;opacity:.8}
+.working{text-align:center}.working h3{font-weight:800;font-size:22px;letter-spacing:-.02em;margin:6px 0 4px;letter-spacing:-.01em}.working p{color:var(--muted);margin:0 0 14px;font-size:13.5px}
 .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin:0 3px;animation:b 1.4s infinite}.dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
 @keyframes b{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-4px)}}
 @media (max-width:700px){.scene{max-width:100%}.scene svg.ic{width:36px;height:36px}.lens{width:64px;height:64px;top:32px}}
@@ -307,8 +357,39 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):  # csendes
         pass
 
+    def _user(self) -> str | None:
+        """proxy módban: az e-mail csak akkor érvényes, ha a Caddy közös titka egyezik ÉS a cím engedélyezett (fail-closed)."""
+        if AUTH_MODE != "proxy":
+            return os.environ.get("USER", "local")
+        if not _secrets.compare_digest((self.headers.get(PROXY_SECRET_HEADER) or "").encode(), PROXY_SECRET.encode()):
+            return None
+        e = (self.headers.get(PROXY_EMAIL_HEADER) or "").strip().lower()
+        return e if e and e in ALLOWED_EMAILS else None
+
+    def _gate(self) -> str | None:
+        user = self._user()
+        if user is None:
+            self._send("forbidden", "text/plain", 403)
+        return user
+
+    def do_static(self, p: str):
+        fp = (Path(__file__).parent / "static" / p[8:]).resolve()
+        if (Path(__file__).parent / "static").resolve() in fp.parents and fp.is_file():
+            ct = {"png": "image/png", "woff2": "font/woff2", "css": "text/css"}.get(fp.suffix[1:], "application/octet-stream")
+            b = fp.read_bytes()
+            self.send_response(200); self.send_header("Content-Type", ct); self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "public, max-age=604800"); self.end_headers(); self.wfile.write(b)
+            return None
+        return self._send("not found", "text/plain", 404)
+
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/healthz":
+            return self._send(json.dumps({"ok": True, "auth": AUTH_MODE, "encrypted": STORE.encrypted}), "application/json")
+        if u.path.startswith("/static/"):
+            return self.do_static(u.path)
+        user = self._gate()
+        if user is None:
+            return None
         qs = urllib.parse.parse_qs(u.query)
         lang = qs.get("lang", ["hu"])[0]
         lang = lang if lang in ("hu", "en") else "hu"
@@ -318,9 +399,14 @@ class H(BaseHTTPRequestHandler):
                 return self._send(index(lang, qs.get("err", [""])[0]))
             if p == "/audit":
                 return self._send(audit_page(lang))
-            if p == "/static/sadrobot.png":
-                fp = Path(__file__).parent / "static" / "sadrobot.png"
-                return self._send(fp.read_bytes(), "image/png") if fp.exists() else self._send("not found", "text/plain", 404)
+            if p.startswith("/static/"):
+                fp = (Path(__file__).parent / "static" / p[8:]).resolve()
+                if (Path(__file__).parent / "static").resolve() in fp.parents and fp.is_file():
+                    ct = {"png": "image/png", "woff2": "font/woff2", "css": "text/css"}.get(fp.suffix[1:], "application/octet-stream")
+                    b = fp.read_bytes()
+                    self.send_response(200); self.send_header("Content-Type", ct); self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "public, max-age=604800"); self.end_headers(); self.wfile.write(b)
+                    return None
+                return self._send("not found", "text/plain", 404)
             if p.startswith("/graph/"):
                 parts = p[7:].split("/")
                 cid = parts[0]
@@ -390,6 +476,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
+        user = self._gate()
+        if user is None:
+            return None
         n = int(self.headers.get("Content-Length", 0))
         form = {k: v[0] for k, v in urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8")).items()}
         lang = form.get("ui_lang", "hu")
@@ -407,8 +496,10 @@ class H(BaseHTTPRequestHandler):
                 mods = [m for m, _ in MODULES_META if form.get(f"mod_{m}") == "on"]
                 if not pc:
                     mods = [m for m in mods if m not in ("person", "phone", "breach", "social", "face")]  # paste cégre is futhat
+                requester = form.get("requester", "").strip() or (user if AUTH_MODE == "proxy" else "")
                 cid = STORE.create_case(form["title"].strip(), form["purpose"].strip(), form.get("legal_basis", "nem_szemelyes"), tg, pc,
-                                        form.get("requester", "").strip(), form.get("lang", lang), mods)
+                                        requester, form.get("lang", lang), mods)
+                STORE.audit("case_created_by", cid, requester or "-", actor=user)
             except Exception as e:  # noqa: BLE001
                 return self._send(index(lang, str(e), form))
             if form.get("action") == "run":
@@ -430,9 +521,17 @@ class H(BaseHTTPRequestHandler):
         return self._send("not found", "text/plain", 404)
 
 
-def serve(port: int = 8765) -> None:
-    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
-    print(f"osint-dd GUI: http://127.0.0.1:{port}  (Ctrl+C = leállítás)")
+def serve(port: int = 8765, host: str | None = None) -> None:
+    host = host or os.environ.get("OSINTDD_BIND", "127.0.0.1")
+    if host not in ("127.0.0.1", "localhost", "::1") and AUTH_MODE != "proxy":
+        raise SystemExit("Nem-loopback címre csak OSINTDD_AUTH=proxy módban lehet kötni (passkey-proxy mögött).")
+    if AUTH_MODE == "proxy":
+        if len(PROXY_SECRET) < 32:
+            raise SystemExit("OSINTDD_AUTH=proxy módban kötelező az OSINTDD_PROXY_SECRET (≥32 karakter; fájl: /run/secrets/osintdd_proxy_secret).")
+        if not ALLOWED_EMAILS:
+            raise SystemExit("OSINTDD_AUTH=proxy módban kötelező az engedélyezett e-mail-lista (OSINTDD_ALLOWED_EMAILS vagy /etc/osintdd/emails.txt).")
+    srv = ThreadingHTTPServer((host, port), H)
+    print(f"osint-dd GUI: http://{host}:{port}  auth={AUTH_MODE} encrypted={STORE.encrypted}  (Ctrl+C = leállítás)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

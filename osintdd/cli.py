@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from .core import DEFAULT_MODULES, LEGAL_BASES, MODULES_META, Store, Target
@@ -57,8 +58,14 @@ def main(argv=None) -> int:
     gr.add_argument("--reject", type=int, help="jelölt elutasítása (same_as id)")
     gr.add_argument("--rebuild", action="store_true", help="gráf újraépítése az utolsó futásból")
     sub.add_parser("mcp", help="MCP-szerver (stdio) – Claude Code / Claude Desktop számára")
+    ep = sub.add_parser("export-pending", help="szerveren: Claude-összefoglaló nélküli futások exportja (JSON, stdout)")
+    ep.add_argument("--limit", type=int, default=20)
+    sub.add_parser("import-summary", help="szerveren: Macen készült összefoglalók beolvasása (JSON, stdin) + jelentés újraépítése")
+    sm = sub.add_parser("summarize-export", help="Macen: export JSON → Claude → import JSON (stdin → stdout)")
+    sm.add_argument("--lang", default=None)
     g = sub.add_parser("gui", help="webes felület indítása")
     g.add_argument("--port", type=int, default=8765)
+    g.add_argument("--host", default=None)
 
     a = ap.parse_args(argv)
     store = Store()
@@ -122,13 +129,60 @@ def main(argv=None) -> int:
             for x in gph.cross_case(a.case_id):
                 print(f"  ↔ más ügyben is: {x['schema']} {x['caption']} → {x['other_title']} ({x['other_case']})")
         return 0
+    if a.cmd == "export-pending":
+        rows = store.conn.execute(
+            "SELECT r.run_id, r.case_id FROM runs r JOIN cases c ON c.id=r.case_id WHERE r.backend NOT LIKE 'claude%' "
+            "AND r.run_id = (SELECT run_id FROM runs r2 WHERE r2.case_id=r.case_id ORDER BY created_at DESC LIMIT 1) ORDER BY r.created_at DESC LIMIT ?", (a.limit,)).fetchall()
+        out = []
+        for r in rows:
+            c = store.get_case(r["case_id"])
+            fs = store.get_findings(r["case_id"], r["run_id"])
+            out.append({"case_id": r["case_id"], "run_id": r["run_id"], "lang": c.get("lang", "hu"),
+                        "case": {"title": c["title"], "purpose": c["purpose"], "legal_basis": c["legal_basis"], "person_checks": c.get("person_checks"), "target": c["target"].to_dict()},
+                        "findings": [{k: f.get(k) for k in ("source", "category", "severity", "title", "summary", "url")} for f in fs if f.get("category") != "manual"]})
+        print(json.dumps(out, ensure_ascii=False))
+        return 0
+    if a.cmd == "summarize-export":
+        from .core import Target
+        from .llm import _claude_cli_run
+        items = json.load(sys.stdin)
+        res = []
+        for it in items:
+            case = dict(it["case"]); case["target"] = Target.from_dict(case["target"]); case["id"] = it["case_id"]
+            if not case["target"].has_person_data() and not case.get("person_checks"):
+                pass
+            try:
+                md = _claude_cli_run(case, it["findings"], a.lang or it.get("lang", "hu"))
+                res.append({"case_id": it["case_id"], "run_id": it["run_id"], "summary_md": md, "backend": "claude-cli@mac"})
+                print(f"  ✓ {it['case']['title']}", file=sys.stderr)
+            except Exception as e:  # noqa: BLE001
+                print(f"  ✗ {it['case']['title']}: {e}", file=sys.stderr)
+        print(json.dumps(res, ensure_ascii=False))
+        return 0
+    if a.cmd == "import-summary":
+        from .report import build_report
+        items = json.load(sys.stdin)
+        n = 0
+        for it in items:
+            if not store.get_case(it["case_id"]):
+                continue
+            store.save_summary(it["case_id"], it["run_id"], it["summary_md"], it.get("backend", "claude-cli@mac"))
+            os.environ["OSINTDD_LLM"] = "stored"
+            try:
+                p = build_report(store, it["case_id"], it["run_id"])
+                store.set_status(it["case_id"], "done", report_path=str(p))
+            except Exception as e:  # noqa: BLE001
+                store.audit("import_summary_report_failed", it["case_id"], str(e)[:200])
+            n += 1
+        print(f"{n} összefoglaló beolvasva")
+        return 0
     if a.cmd == "mcp":
         from .mcp_server import main as mcp_main
         mcp_main()
         return 0
     if a.cmd == "gui":
         from .webapp import serve
-        serve(a.port)
+        serve(a.port, a.host)
         return 0
     return 1
 
