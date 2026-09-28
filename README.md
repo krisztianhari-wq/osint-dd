@@ -59,7 +59,7 @@ The summary is written by the first available backend, in this order (`OSINTDD_L
 | Backend | Requirement | Cost / privacy |
 |---|---|---|
 | `claude-api` | `ANTHROPIC_API_KEY` in `.env` | API billing |
-| `claude-cli` | Claude Code CLI installed (`curl -fsSL https://claude.ai/install.sh \| bash`, then `claude auth login` once) | uses your existing Claude subscription, no separate key |
+| `claude-cli` | Claude Code CLI installed (`curl -fsSL https://claude.ai/install.sh \| bash`, then `claude auth login` once). The interactive login's OAuth session can expire; for a durable setup run `claude setup-token` once and store the long-lived token in `CLAUDE_CODE_OAUTH_TOKEN` (`.env`) or, on macOS, in the Keychain: `security add-generic-password -a osintdd -s osint-dd-claude-token -w '<token>' -U` – the app reads it from there | uses your existing Claude subscription, no separate key |
 | `ollama:<model>` | `brew install ollama && ollama pull llama3.1`, Ollama running | free, **fully offline** — personal data never leaves the machine |
 | `rules` | always | rule-based summary |
 

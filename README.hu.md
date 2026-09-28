@@ -37,7 +37,7 @@ Az összefoglalót az első elérhető háttér írja, ebben a sorrendben (`OSIN
 | Háttér | Feltétel | Költség / adatvédelem |
 |---|---|---|
 | `claude-api` | `ANTHROPIC_API_KEY` a `.env`-ben | API-számlázás |
-| `claude-cli` | Claude Code CLI telepítve (`curl -fsSL https://claude.ai/install.sh \| bash`, majd `claude` egyszer bejelentkezve) | a meglévő Claude-előfizetést használja, nincs külön kulcs |
+| `claude-cli` | Claude Code CLI telepítve (`curl -fsSL https://claude.ai/install.sh \| bash`, majd `claude auth login` egyszer). Az interaktív bejelentkezés OAuth-munkamenete lejárhat; tartós megoldás: egyszer `claude setup-token`, és a hosszú élettartamú token a `CLAUDE_CODE_OAUTH_TOKEN` változóban (`.env`) vagy macOS-en a Keychainben: `security add-generic-password -a osintdd -s osint-dd-claude-token -w '<token>' -U` – az app onnan olvassa | a meglévő Claude-előfizetést használja, nincs külön kulcs |
 | `ollama:<modell>` | `brew install ollama && ollama pull llama3.1` és fut az Ollama | ingyenes, **teljesen offline** – személyes adat nem hagyja el a gépet |
 | `rules` | mindig | szabályalapú összegzés |
 

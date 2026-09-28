@@ -22,6 +22,7 @@ SYSTEM = {
 
 import shutil
 import subprocess
+import sys
 
 CLAUDE_CLI_CANDIDATES = [os.path.expanduser("~/.local/bin/claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
 OLLAMA_URL = os.environ.get("OSINTDD_OLLAMA_URL", "http://127.0.0.1:11434")
@@ -92,6 +93,24 @@ def _user_prompt(case, findings, lang) -> str:
     return ("Készíts vezetői összefoglalót ebből az adathalmazból:\n\n" if lang == "hu" else "Produce the executive summary from this dataset:\n\n") + _payload(case, findings)
 
 
+KEYCHAIN_SERVICE = "osint-dd-claude-token"
+
+
+def _cli_env() -> dict:
+    """Környezet a `claude -p` alfolyamathoz. Hosszú élettartamú token (claude setup-token) a
+    CLAUDE_CODE_OAUTH_TOKEN változóból vagy a macOS Keychainből (service: osint-dd-claude-token) –
+    így nem függünk a rövid OAuth-munkamenet frissítésétől."""
+    env = {**os.environ, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+    if not env.get("CLAUDE_CODE_OAUTH_TOKEN") and sys.platform == "darwin":
+        try:
+            p = subprocess.run(["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"], capture_output=True, text=True, timeout=5)
+            if p.returncode == 0 and p.stdout.strip():
+                env["CLAUDE_CODE_OAUTH_TOKEN"] = p.stdout.strip()
+        except Exception:  # noqa: BLE001
+            pass
+    return env
+
+
 def _claude_cli_run(case: dict, findings: list[dict], lang: str) -> str:
     """Claude Code CLI nem interaktív módban (`claude -p`) – a meglévő Claude-előfizetést használja, API-kulcs nélkül."""
     exe = _claude_cli()
@@ -101,8 +120,7 @@ def _claude_cli_run(case: dict, findings: list[dict], lang: str) -> str:
     model = os.environ.get("OSINTDD_CLI_MODEL")
     if model:
         cmd += ["--model", model]
-    p = subprocess.run(cmd, input=_user_prompt(case, findings, lang), capture_output=True, text=True, timeout=600,
-                       env={**os.environ, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
+    p = subprocess.run(cmd, input=_user_prompt(case, findings, lang), capture_output=True, text=True, timeout=600, env=_cli_env())
     if p.returncode != 0 or not p.stdout.strip():
         raise RuntimeError((p.stderr or p.stdout or "üres válasz").strip()[-300:])
     return p.stdout.strip()
@@ -184,8 +202,7 @@ def raw_completion(prompt: str, lang: str = "hu") -> str:
                 return "\n".join(bl.text for bl in msg.content if getattr(bl, "type", "") == "text")
             if b == "cli":
                 exe = _claude_cli()
-                p = subprocess.run([exe, "-p", "--output-format", "text", "--append-system-prompt", sysmsg + " Do not use tools."], input=prompt, capture_output=True, text=True, timeout=600,
-                                   env={**os.environ, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"})
+                p = subprocess.run([exe, "-p", "--output-format", "text", "--append-system-prompt", sysmsg + " Do not use tools."], input=prompt, capture_output=True, text=True, timeout=600, env=_cli_env())
                 if p.returncode == 0 and p.stdout.strip():
                     return p.stdout
                 raise RuntimeError(p.stderr[-200:])
