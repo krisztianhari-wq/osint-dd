@@ -24,6 +24,9 @@ PROXY_EMAIL_HEADER = "X-Auth-Request-Email"
 PROXY_SECRET_HEADER = "X-Osintdd-Proxy"
 
 
+# böngészőfül-ikon: a sadrobot robot nagyító-jelvénnyel (sadrobot-infra/tools/make_favicons.py)
+FAVICON = "data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%2212 8 196 196%22 width=%22200%22 height=%22200%22%3E%3Cg%3E%0A  %3Crect x=%2296%22 y=%2234%22 width=%228%22 height=%2230%22 rx=%222%22 fill=%22%230b1f4d%22/%3E%0A  %3Ccircle cx=%22100%22 cy=%2226%22 r=%2212%22 fill=%22%23ff6048%22/%3E%0A  %3Cellipse cx=%22100%22 cy=%2266%22 rx=%2224%22 ry=%2211%22 fill=%22%230b1f4d%22/%3E%0A  %3Crect x=%2224%22 y=%2292%22 width=%2230%22 height=%2244%22 rx=%2215%22 fill=%22%230b1f4d%22/%3E%0A  %3Crect x=%22146%22 y=%2292%22 width=%2230%22 height=%2244%22 rx=%2215%22 fill=%22%230b1f4d%22/%3E%0A  %3Crect x=%2232%22 y=%2297%22 width=%224.5%22 height=%2234%22 rx=%222.2%22 fill=%22%2312e6f5%22/%3E%0A  %3Crect x=%22163.5%22 y=%2297%22 width=%224.5%22 height=%2234%22 rx=%222.2%22 fill=%22%2312e6f5%22/%3E%0A  %3Crect x=%2242%22 y=%2262%22 width=%22116%22 height=%2292%22 rx=%2240%22 fill=%22%230b1f4d%22/%3E%0A  %3Crect x=%2258%22 y=%2280%22 width=%2284%22 height=%2256%22 rx=%2222%22 fill=%22%230b1f4d%22 stroke=%22%23fff%22 stroke-width=%223.2%22/%3E%0A  %3Cpath d=%22M120 96c-6 8-9 12-9 17a9 9 0 0 0 18 0c0-5-3-9-9-17z%22 fill=%22%2312e6f5%22/%3E%0A  %3Crect x=%2272%22 y=%22158%22 width=%2256%22 height=%2224%22 rx=%2212%22 fill=%22%230b1f4d%22/%3E%0A  %3Crect x=%2291%22 y=%22163%22 width=%225%22 height=%2213%22 rx=%222.5%22 fill=%22%2312e6f5%22/%3E%0A  %3Crect x=%22104%22 y=%22163%22 width=%225%22 height=%2213%22 rx=%222.5%22 fill=%22%2312e6f5%22/%3E%3C/g%3E%3Cg transform=%22translate(150 150) scale(1.18) translate(-150 -150)%22%3E%3Ccircle cx=%22150%22 cy=%22150%22 r=%2247%22 fill=%22%23fff%22/%3E%3Ccircle cx=%22150%22 cy=%22150%22 r=%2241%22 fill=%22%235b3fd0%22/%3E%3Ccircle cx=%22145%22 cy=%22145%22 r=%2215%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%227%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3Cpath d=%22M156 156 L170 170%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%227%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/g%3E%3C/svg%3E"
+
 def _read_secret(env: str, default_file: str) -> str:
     v = os.environ.get(env, "")
     if v:
@@ -124,7 +127,7 @@ def page(lang: str, body: str, title: str = "") -> str:
     u = UI[lang]
     other = "en" if lang == "hu" else "hu"
     return f"""<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{html.escape(title or t(lang,'app'))}</title><style>{CSS}</style></head><body><div class="wrap">
+<title>{html.escape(title or t(lang,'app'))}</title><link rel="icon" type="image/svg+xml" href="{FAVICON}"><style>{CSS}</style></head><body><div class="wrap">
 <nav><a class="logo" href="/?lang={lang}"><img src="/static/sadrobot.png" alt="sadrobot"><span style="display:flex;flex-direction:column;line-height:1.2"><b>{html.escape(t(lang,'app'))}</b><span>{html.escape(t(lang,'tagline'))}</span></span></a>
 <div class="langs"><a href="/audit?lang={lang}">{u['audit']}</a><a class="{'on' if lang=='hu' else ''}" href="?lang=hu">HU</a><a class="{'on' if lang=='en' else ''}" href="?lang=en">EN</a></div></nav>
 {body}
