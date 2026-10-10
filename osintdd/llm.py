@@ -48,7 +48,26 @@ def _ollama_up() -> bool:
         return False
 
 
+def _load_key_file() -> None:
+    """ANTHROPIC_API_KEY_FILE (pl. Docker-secret /run/secrets/anthropic_api_key) → ANTHROPIC_API_KEY.
+    Így a szerveren fájlból jön a kulcs, nem kell a Macen futó CLI (lásd sadrobot-infra remote-summarize)."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return
+    f = os.environ.get("ANTHROPIC_API_KEY_FILE")
+    if f:
+        try:
+            v = open(f, encoding="utf-8").read().strip()
+            if v:
+                os.environ["ANTHROPIC_API_KEY"] = v
+        except OSError:
+            pass
+
+
+_load_key_file()
+
+
 def api_available() -> bool:
+    _load_key_file()
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return True
     return os.path.isdir(os.path.expanduser("~/.config/anthropic"))
